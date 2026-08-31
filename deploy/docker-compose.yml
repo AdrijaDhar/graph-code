@@ -1,0 +1,34 @@
+services:
+  memgraph:
+    image: memgraph/memgraph:latest
+    restart: unless-stopped
+    ports:
+      - "7687:7687"
+    mem_limit: 2g
+
+  api:
+    build: ..
+    restart: unless-stopped
+    depends_on:
+      - memgraph
+    environment:
+      MEMGRAPH_URI: bolt://memgraph:7687
+      ROCKSDB_PATH: /data/rocksdb
+      DATABASE_URL: sqlite:////data/graphcode.db
+    volumes:
+      - ../data:/data
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+
+volumes:
+  caddy-data:

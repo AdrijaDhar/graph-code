@@ -1,0 +1,27 @@
+services:
+  memgraph:
+    image: memgraph/memgraph:latest
+    ports:
+      - "7687:7687"
+      - "7444:7444"
+    volumes:
+      - memgraph-data:/var/lib/memgraph
+
+  api:
+    build: .
+    depends_on:
+      - memgraph
+    ports:
+      - "8000:8000"
+    environment:
+      MEMGRAPH_URI: bolt://memgraph:7687
+      ROCKSDB_PATH: /data/rocksdb
+      DATABASE_URL: sqlite:////data/graphcode.db
+      GRAPHCODE_ROOT: /workspace
+    volumes:
+      - ./data:/data
+      - .:/workspace
+    command: uvicorn graphcode.saas.app:app --host 0.0.0.0 --port 8000
+
+volumes:
+  memgraph-data:

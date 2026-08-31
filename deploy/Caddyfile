@@ -1,0 +1,8 @@
+:80 {
+  reverse_proxy api:8000
+}
+
+# Replace with your domain for HTTPS:
+# graphcode.example.com {
+#   reverse_proxy api:8000
+# }
