@@ -41,6 +41,18 @@ class RustParser(LanguageParser):
                         props={"module": spec},
                     )
                 )
+            elif node.type == "mod_item" and named_child(node, "body") is None:
+                name_n = named_child(node, "name")
+                if name_n:
+                    spec = node_text(ctx.source, name_n).strip()
+                    batch.add_edge(
+                        GraphEdge(
+                            type="IMPORTS",
+                            from_id=module_node.id,
+                            to_id=f"unresolved:{spec}",
+                            props={"module": spec},
+                        )
+                    )
             elif node.type == "struct_item":
                 name_n = named_child(node, "name")
                 name = node_text(ctx.source, name_n) if name_n else "Anon"

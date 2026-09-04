@@ -46,10 +46,19 @@ def resolve_imports(batch: GraphBatch, repo_hash: str, repo_root: Path | None = 
                         path = cand
                         break
         else:
-            # generic: match file stem / path fragment
-            needle = spec.strip('<>"').replace("::", "/").replace(".", "/")
-            for p in files:
-                if p.endswith(needle) or Path(p).stem == Path(needle).stem:
+            # generic: match file stem / path fragment, preferring same-language files
+            # to avoid cross-language stem collisions (e.g. Rust "mod util" vs C's util.c/util.h)
+            same_lang = [p for p in files if modules[p].props.get("language") == lang]
+            search_space = same_lang or list(files)
+            spec_clean = spec.strip('<>"')
+            mangled = spec_clean.replace("::", "/").replace(".", "/")
+            for p in search_space:
+                if (
+                    p.endswith(spec_clean)
+                    or Path(p).name == Path(spec_clean).name
+                    or p.endswith(mangled)
+                    or Path(p).stem == Path(mangled).stem
+                ):
                     path = p
                     break
         if path and path in files:
@@ -74,7 +83,10 @@ def resolve_inherits(batch: GraphBatch) -> None:
             keep.append(e)
             continue
         base = (e.props or {}).get("base") or ""
-        base_name = base.split(".")[-1].split("<")[0].strip()
+        words = base.split(".")[-1].split("<")[0].strip().split()
+        while words and words[0] in ("public", "private", "protected", "virtual"):
+            words.pop(0)
+        base_name = " ".join(words)
         cands = by_name.get(base_name) or []
         if len(cands) == 1:
             new.append(GraphEdge(type="INHERITS", from_id=e.from_id, to_id=cands[0].id, props=e.props))

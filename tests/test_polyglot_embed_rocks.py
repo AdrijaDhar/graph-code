@@ -1,11 +1,18 @@
 from pathlib import Path
 
+from graphcode.embed import encoder
 from graphcode.indexer import IndexService
 from graphcode.loader.rocksdb_store import RocksStore
 from graphcode.queries.hybrid import semantic_search
 from graphcode.schema import GraphBatch, GraphNode
 
 ROOT = Path(__file__).parent / "fixtures" / "mini_repo"
+
+
+def test_real_embedding_model_loaded():
+    """Fail loudly if fastembed is missing instead of silently degrading to hash vectors."""
+    encoder.embed_text("def parse_config(path): pass")
+    assert encoder._MODEL, "fastembed did not load; semantic search would silently run on fake hash vectors"
 
 
 def test_polyglot_index_and_semantic(tmp_path):

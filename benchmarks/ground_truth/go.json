@@ -1,0 +1,26 @@
+{
+  "language": "go",
+  "edges": [
+    {
+      "type": "CALLS",
+      "from_path": "go/extra.go",
+      "from_name": "Combine",
+      "to_path": "go/main.go",
+      "to_name": "UseParse"
+    },
+    {
+      "type": "CALLS",
+      "from_path": "go/extra.go",
+      "from_name": "Combine",
+      "to_path": "go/util.go",
+      "to_name": "Parse"
+    },
+    {
+      "type": "CALLS",
+      "from_path": "go/main.go",
+      "from_name": "UseParse",
+      "to_path": "go/util.go",
+      "to_name": "Parse"
+    }
+  ]
+}

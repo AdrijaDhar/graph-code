@@ -85,6 +85,10 @@ class WatchDaemon:
             self._observer.stop()
             self._observer.join(timeout=2)
             self._observer = None
+        if self.handler:
+            # reindex_file() debounces the durable snapshot write; make sure a stop
+            # (or process exit) doesn't lose whatever's still pending in that window.
+            self.handler.svc.flush_snapshot()
 
     def status(self) -> dict:
         return {

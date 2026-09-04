@@ -1,0 +1,3 @@
+files,indexed_files,functions,edges,index_s,shortest_path_p50_ms,shortest_path_p95_ms,blast_radius_p50_ms,blast_radius_p95_ms,call_chain_p50_ms,call_chain_p95_ms,context_compile_p50_ms,context_compile_p95_ms
+500,503,746,3546,5.221,0.38,1.29,0.05,0.08,0.01,0.02,21.33,23.96
+2000,2003,2977,14177,20.614,2.12,4.17,0.06,0.09,0.01,0.01,53.37,56.66

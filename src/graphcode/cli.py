@@ -16,7 +16,19 @@ def main() -> None:
     st = sub.add_parser("status")
     w = sub.add_parser("watch")
     w.add_argument("path")
+    chat = sub.add_parser("chat", help="interactive MCP-backed coding agent for a repo")
+    chat.add_argument("path")
+    chat.add_argument("--model", default=None)
     args = p.parse_args()
+
+    if args.cmd == "chat":
+        import asyncio
+
+        from graphcode.mcp.client import main as chat_main
+
+        asyncio.run(chat_main(args.path, model=args.model))
+        return
+
     svc = get_index_service()
     if args.cmd == "index":
         print(json.dumps(svc.index_repo(Path(args.path)), indent=2))

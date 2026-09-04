@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
-from graphcode.config import settings
+from graphcode.config import EXTENSION_LANGUAGE, settings
 from graphcode.embed.encoder import embed_text, function_text
 from graphcode.loader.memory import MemoryStore
 from graphcode.loader.memgraph import MemgraphStore
@@ -19,7 +20,7 @@ from graphcode.schema import GraphBatch
 
 
 class IndexService:
-    def __init__(self, rocks_path: Path | str | None = None) -> None:
+    def __init__(self, rocks_path: Path | str | None = None, snapshot_debounce_s: float = 5.0) -> None:
         self.memory = MemoryStore()
         self.rocks = RocksStore(rocks_path or settings.rocks_path)
         self.memgraph: MemgraphStore | None = None
@@ -34,7 +35,40 @@ class IndexService:
             except Exception:
                 self.memgraph = None
         self.last_index: dict = {}
+        # reindex_file() updates self.memory immediately (queries always see fresh
+        # state) but debounces the durable RocksDB snapshot write, since that write
+        # re-serializes the *entire* graph and was measured costing real time on
+        # every single save — coalesce bursts of saves into one write.
+        self._snapshot_debounce_s = snapshot_debounce_s
+        self._snapshot_lock = threading.Lock()
+        self._snapshot_timer: threading.Timer | None = None
+        self._pending_snapshot: tuple[str, str] | None = None
         self._hydrate()
+
+    def _schedule_snapshot(self, org_id: str, repo_id: str) -> None:
+        with self._snapshot_lock:
+            self._pending_snapshot = (org_id, repo_id)
+            if self._snapshot_timer is None or not self._snapshot_timer.is_alive():
+                self._snapshot_timer = threading.Timer(self._snapshot_debounce_s, self.flush_snapshot)
+                self._snapshot_timer.daemon = True
+                self._snapshot_timer.start()
+
+    def flush_snapshot(self) -> None:
+        """Write the pending durable snapshot now, bypassing the debounce timer.
+        Safe to call with nothing pending (no-op)."""
+        with self._snapshot_lock:
+            pending = self._pending_snapshot
+            self._pending_snapshot = None
+            if self._snapshot_timer is not None:
+                self._snapshot_timer.cancel()
+                self._snapshot_timer = None
+        if not pending:
+            return
+        org_id, repo_id = pending
+        snap = GraphBatch(nodes=list(self.memory.nodes.values()), edges=[])
+        for edges in self.memory.out.values():
+            snap.edges.extend(edges)
+        self.rocks.save_snapshot(org_id, repo_id, snap)
 
     def _hydrate(self) -> None:
         snaps = self.rocks.all_snapshots()
@@ -71,7 +105,7 @@ class IndexService:
 
         batch = GraphBatch()
         if parallel and len(jobs) > 4:
-            with ThreadPoolExecutor(max_workers=8) as pool:
+            with ProcessPoolExecutor(max_workers=8) as pool:
                 futs = [pool.submit(_parse_one, j) for j in jobs]
                 for fut in as_completed(futs):
                     part = fut.result()
@@ -142,52 +176,116 @@ class IndexService:
         org_id: str = "local",
         repo_id: str | None = None,
     ) -> dict:
+        """Re-parses just `rel` (plus, for ripple correctness, any file with a CALLS
+        edge directly into it) and re-resolves against the rest of the already-known
+        graph as lookup context — NOT the whole repo. Two things this fixes vs. a naive
+        "re-parse this one file in isolation" approach:
+
+        1. resolve_imports/resolve_calls need visibility into *other* modules to
+           resolve anything cross-file at all; a batch containing only the one
+           reindexed file's fresh nodes has none, so every one of that file's
+           IMPORTS/CALLS edges would silently vanish on every single-file save
+           (confirmed via a manual repro before this fix — this was live-destructive,
+           not just "doesn't ripple").
+        2. A caller elsewhere whose CALLS edge pointed into this file gets a real
+           chance to re-resolve against the file's new symbols, instead of that edge
+           just disappearing until the next full reindex.
+
+        A brand-new import to a file with *no prior relationship* to `rel` still needs
+        a full `index_repo()` to be picked up — this only re-resolves relationships
+        the graph already knew about, which is the common single-file-edit case.
+        """
         root = Path(root).resolve()
         repo_hash = hashlib.sha1(str(root).encode()).hexdigest()[:12]
         repo_id = repo_id or self.last_index.get("repo_id") or repo_hash
         path = root / rel
         if not path.is_file():
             self.memory.delete_module(rel, org_id)
+            if self.memgraph:
+                try:
+                    self.memgraph.delete_module(rel, org_id)
+                except Exception:
+                    pass
+            self._schedule_snapshot(org_id, repo_id)
             return {"deleted": rel}
         source = path.read_bytes()
         digest = file_digest(source)
         prev = self.rocks.get_hash(org_id, repo_id, rel)
         if prev == digest:
             return {"unchanged": rel}
-        from graphcode.config import EXTENSION_LANGUAGE
-
         lang = EXTENSION_LANGUAGE.get(path.suffix.lower())
         if not lang:
             return {"skipped": rel}
-        self.memory.delete_module(rel, org_id)
-        if self.memgraph:
-            try:
-                self.memgraph.delete_module(rel, org_id)
-            except Exception:
-                pass
-        part = _parse_one((rel, lang, source, repo_hash))
-        if part:
-            for n in part.nodes:
-                n.props["org_id"] = org_id
-                n.props["repo_id"] = repo_id
-            resolve_imports(part, repo_hash, root)
-            resolve_calls(part)
-            self.memory.load_batch(part, org_id=org_id)
+
+        old_ids = {
+            n.id for n in self.memory.nodes.values() if n.props.get("path") == rel and n.props.get("org_id") == org_id
+        }
+        neighbor_paths: set[str] = set()
+        for nid in old_ids:
+            for e in self.memory.inn.get(nid, []):
+                if e.type == "CALLS":
+                    caller = self.memory.nodes.get(e.from_id)
+                    if caller and caller.props.get("path") != rel:
+                        neighbor_paths.add(caller.props["path"])
+
+        changed_paths = [rel] + sorted(neighbor_paths)
+        for p in changed_paths:
+            self.memory.delete_module(p, org_id)
             if self.memgraph:
                 try:
-                    self.memgraph.load_batch(part, org_id)
+                    self.memgraph.delete_module(p, org_id)
                 except Exception:
                     pass
-            src_text = source.decode("utf-8", errors="replace")
-            for n in part.nodes:
-                if n.label == "Function":
-                    self.rocks.put_vector(n.id, org_id, embed_text(function_text(n, src_text)))
-        self.rocks.set_hash(org_id, repo_id, rel, digest)
-        snap = GraphBatch(nodes=list(self.memory.nodes.values()), edges=[])
-        for edges in self.memory.out.values():
-            snap.edges.extend(edges)
-        self.rocks.save_snapshot(org_id, repo_id, snap)
-        return {"reindexed": rel, "digest": digest}
+
+        fresh = GraphBatch()
+        src_texts: dict[str, str] = {}
+        for p in changed_paths:
+            fp = root / p
+            if not fp.is_file():
+                continue
+            p_lang = EXTENSION_LANGUAGE.get(fp.suffix.lower())
+            if not p_lang:
+                continue
+            p_source = fp.read_bytes()
+            src_texts[p] = p_source.decode("utf-8", errors="replace")
+            b = _parse_one((p, p_lang, p_source, repo_hash))
+            if not b:
+                continue
+            for n in b.nodes:
+                n.props["org_id"] = org_id
+                n.props["repo_id"] = repo_id
+            fresh.merge(b)
+
+        fresh_ids = {n.id for n in fresh.nodes}
+        context = GraphBatch(nodes=list(fresh.nodes), edges=list(fresh.edges))
+        for n in self.memory.nodes.values():
+            if n.id not in fresh_ids:
+                context.nodes.append(n)
+
+        resolve_imports(context, repo_hash, root)
+        resolve_inherits(context)
+        resolve_calls(context)
+        new_edges = [e for e in context.edges if e.from_id in fresh_ids]
+
+        self.memory.load_batch(GraphBatch(nodes=fresh.nodes, edges=new_edges), org_id=org_id)
+        if self.memgraph:
+            try:
+                self.memgraph.load_batch(GraphBatch(nodes=fresh.nodes, edges=new_edges), org_id)
+            except Exception:
+                pass
+
+        for n in fresh.nodes:
+            if n.label == "Function":
+                src = src_texts.get(n.props.get("path", ""), "")
+                self.rocks.put_vector(n.id, org_id, embed_text(function_text(n, src)))
+
+        for p in changed_paths:
+            fp = root / p
+            if fp.is_file():
+                self.rocks.set_hash(org_id, repo_id, p, file_digest(fp.read_bytes()))
+
+        self._schedule_snapshot(org_id, repo_id)
+        return {"reindexed": rel, "digest": digest, "rippled": sorted(neighbor_paths)}
 
 
 def _parse_one(job: tuple[str, str, bytes, str]) -> GraphBatch | None:

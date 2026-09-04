@@ -1,0 +1,43 @@
+{
+  "language": "python",
+  "edges": [
+    {
+      "type": "CALLS",
+      "from_path": "src/api/controller.py",
+      "from_name": "handle_request",
+      "to_path": "src/utils.py",
+      "to_name": "parse_config"
+    },
+    {
+      "type": "CALLS",
+      "from_path": "src/api/service.py",
+      "from_name": "run",
+      "to_path": "src/utils.py",
+      "to_name": "parse_config"
+    },
+    {
+      "type": "CALLS",
+      "from_path": "src/api/service.py",
+      "from_name": "run",
+      "to_path": "src/utils.py",
+      "to_name": "unused_helper"
+    },
+    {
+      "type": "IMPORTS",
+      "from_path": "src/api/controller.py",
+      "to_path": "src/utils.py"
+    },
+    {
+      "type": "IMPORTS",
+      "from_path": "src/api/service.py",
+      "to_path": "src/utils.py"
+    },
+    {
+      "type": "INHERITS",
+      "from_path": "src/api/controller.py",
+      "from_name": "ApiController",
+      "to_path": "src/api/controller.py",
+      "to_name": "BaseController"
+    }
+  ]
+}

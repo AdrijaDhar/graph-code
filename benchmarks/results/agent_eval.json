@@ -1,0 +1,476 @@
+[
+  {
+    "task": "rename_function",
+    "condition": "baseline",
+    "context_files": [
+      "utils/format.py"
+    ],
+    "changed_files": [
+      "utils/format.py"
+    ],
+    "passed": false,
+    "detail": "Traceback (most recent call last):\n  File \"<string>\", line 2, in <module>\n    from api.handlers import handle\n  File \"/private/var/folders/zp/w6481mb14rb6xb1sqdx03cyr0000gn/T/gc_eval_patch_rename_function_t4k4ovh5/api/handlers.py\", line 1, in <module>\n    from utils.format import to_snake\nImportErro",
+    "latency_s": 1.17,
+    "usage": {
+      "queue_time": 0.464303783,
+      "prompt_tokens": 242,
+      "prompt_time": 0.023879816,
+      "completion_tokens": 262,
+      "completion_time": 0.548400055,
+      "total_tokens": 504,
+      "total_time": 0.572279871,
+      "completion_tokens_details": {
+        "reasoning_tokens": 223
+      }
+    }
+  },
+  {
+    "task": "rename_function",
+    "condition": "graph",
+    "context_files": [
+      "utils/format.py",
+      "api/handlers.py"
+    ],
+    "changed_files": [
+      "utils/format.py",
+      "api/handlers.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 0.78,
+    "usage": {
+      "queue_time": 0.291165232,
+      "prompt_tokens": 267,
+      "prompt_time": 0.027122107,
+      "completion_tokens": 182,
+      "completion_time": 0.380851157,
+      "total_tokens": 449,
+      "total_time": 0.407973264,
+      "completion_tokens_details": {
+        "reasoning_tokens": 110
+      }
+    }
+  },
+  {
+    "task": "rename_function",
+    "condition": "embedding",
+    "context_files": [
+      "utils/format.py",
+      "api/handlers.py"
+    ],
+    "changed_files": [
+      "utils/format.py",
+      "api/handlers.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 0.86,
+    "usage": {
+      "queue_time": 0.212533154,
+      "prompt_tokens": 267,
+      "prompt_time": 0.013083475,
+      "completion_tokens": 256,
+      "completion_time": 0.533583473,
+      "total_tokens": 523,
+      "total_time": 0.546666948,
+      "completion_tokens_details": {
+        "reasoning_tokens": 184
+      }
+    }
+  },
+  {
+    "task": "add_required_param",
+    "condition": "baseline",
+    "context_files": [
+      "db/connection.py"
+    ],
+    "changed_files": [
+      "db/connection.py"
+    ],
+    "passed": false,
+    "detail": "Traceback (most recent call last):\n  File \"<string>\", line 3, in <module>\n    result = run_query('SELECT 1')\n  File \"/private/var/folders/zp/w6481mb14rb6xb1sqdx03cyr0000gn/T/gc_eval_patch_add_required_param_77ku97qs/services/query.py\", line 5, in run_query\n    conn = connect('localhost', 5432)\nTypeE",
+    "latency_s": 1.32,
+    "usage": {
+      "queue_time": 0.47243364,
+      "prompt_tokens": 301,
+      "prompt_time": 0.014644188,
+      "completion_tokens": 349,
+      "completion_time": 0.739426007,
+      "total_tokens": 650,
+      "total_time": 0.754070195,
+      "completion_tokens_details": {
+        "reasoning_tokens": 278
+      }
+    }
+  },
+  {
+    "task": "add_required_param",
+    "condition": "graph",
+    "context_files": [
+      "db/connection.py",
+      "services/query.py"
+    ],
+    "changed_files": [
+      "db/connection.py",
+      "services/query.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 0.95,
+    "usage": {
+      "queue_time": 0.308541232,
+      "prompt_tokens": 345,
+      "prompt_time": 0.017244847,
+      "completion_tokens": 249,
+      "completion_time": 0.532929532,
+      "total_tokens": 594,
+      "total_time": 0.550174379,
+      "completion_tokens_details": {
+        "reasoning_tokens": 125
+      }
+    }
+  },
+  {
+    "task": "add_required_param",
+    "condition": "embedding",
+    "context_files": [
+      "db/connection.py",
+      "services/query.py"
+    ],
+    "changed_files": [
+      "db/connection.py",
+      "services/query.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 1.09,
+    "usage": {
+      "queue_time": 0.456567997,
+      "prompt_tokens": 345,
+      "prompt_time": 0.021113402,
+      "completion_tokens": 249,
+      "completion_time": 0.526436108,
+      "total_tokens": 594,
+      "total_time": 0.54754951,
+      "completion_tokens_details": {
+        "reasoning_tokens": 125
+      }
+    }
+  },
+  {
+    "task": "change_return_type",
+    "condition": "baseline",
+    "context_files": [
+      "models/user.py"
+    ],
+    "changed_files": [
+      "models/user.py"
+    ],
+    "passed": false,
+    "detail": "Traceback (most recent call last):\n  File \"<string>\", line 3, in <module>\n    result = render('Ada', 'Lovelace')\n  File \"/private/var/folders/zp/w6481mb14rb6xb1sqdx03cyr0000gn/T/gc_eval_patch_change_return_type_es3j2u12/views/profile.py\", line 6, in render\n    return u.full_name().upper()\n          ",
+    "latency_s": 0.96,
+    "usage": {
+      "queue_time": 0.309742561,
+      "prompt_tokens": 284,
+      "prompt_time": 0.045060388,
+      "completion_tokens": 246,
+      "completion_time": 0.518155979,
+      "total_tokens": 530,
+      "total_time": 0.563216367,
+      "completion_tokens_details": {
+        "reasoning_tokens": 186
+      }
+    }
+  },
+  {
+    "task": "change_return_type",
+    "condition": "graph",
+    "context_files": [
+      "models/user.py",
+      "views/profile.py"
+    ],
+    "changed_files": [
+      "models/user.py",
+      "views/profile.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 1.14,
+    "usage": {
+      "queue_time": 0.341886101,
+      "prompt_tokens": 318,
+      "prompt_time": 0.018972998,
+      "completion_tokens": 323,
+      "completion_time": 0.682194147,
+      "total_tokens": 641,
+      "total_time": 0.701167145,
+      "completion_tokens_details": {
+        "reasoning_tokens": 179
+      }
+    }
+  },
+  {
+    "task": "change_return_type",
+    "condition": "embedding",
+    "context_files": [
+      "models/user.py",
+      "views/profile.py"
+    ],
+    "changed_files": [
+      "models/user.py",
+      "views/profile.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 1.38,
+    "usage": {
+      "queue_time": 0.493196728,
+      "prompt_tokens": 318,
+      "prompt_time": 0.06274894,
+      "completion_tokens": 356,
+      "completion_time": 0.740032335,
+      "total_tokens": 674,
+      "total_time": 0.802781275,
+      "completion_tokens_details": {
+        "reasoning_tokens": 186
+      }
+    }
+  },
+  {
+    "task": "remove_default_arg",
+    "condition": "baseline",
+    "context_files": [
+      "config/settings.py"
+    ],
+    "changed_files": [
+      "config/settings.py"
+    ],
+    "passed": false,
+    "detail": "Traceback (most recent call last):\n  File \"<string>\", line 3, in <module>\n    result = bootstrap()\n  File \"/private/var/folders/zp/w6481mb14rb6xb1sqdx03cyr0000gn/T/gc_eval_patch_remove_default_arg_nudur4cl/bootstrap/init.py\", line 5, in bootstrap\n    return load()\nTypeError: load() missing 1 require",
+    "latency_s": 1.02,
+    "usage": {
+      "queue_time": 0.389252584,
+      "prompt_tokens": 265,
+      "prompt_time": 0.016025795,
+      "completion_tokens": 253,
+      "completion_time": 0.528813653,
+      "total_tokens": 518,
+      "total_time": 0.544839448,
+      "completion_tokens_details": {
+        "reasoning_tokens": 174
+      }
+    }
+  },
+  {
+    "task": "remove_default_arg",
+    "condition": "graph",
+    "context_files": [
+      "config/settings.py",
+      "bootstrap/init.py"
+    ],
+    "changed_files": [
+      "config/settings.py",
+      "bootstrap/init.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 0.95,
+    "usage": {
+      "queue_time": 0.343666615,
+      "prompt_tokens": 283,
+      "prompt_time": 0.015124158,
+      "completion_tokens": 231,
+      "completion_time": 0.490369214,
+      "total_tokens": 514,
+      "total_time": 0.505493372,
+      "completion_tokens_details": {
+        "reasoning_tokens": 164
+      }
+    }
+  },
+  {
+    "task": "remove_default_arg",
+    "condition": "embedding",
+    "context_files": [
+      "config/settings.py",
+      "bootstrap/init.py"
+    ],
+    "changed_files": [
+      "config/settings.py",
+      "bootstrap/init.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 0.95,
+    "usage": {
+      "queue_time": 0.332188517,
+      "prompt_tokens": 283,
+      "prompt_time": 0.014469806,
+      "completion_tokens": 193,
+      "completion_time": 0.405903639,
+      "total_tokens": 476,
+      "total_time": 0.420373445,
+      "completion_tokens_details": {
+        "reasoning_tokens": 126
+      }
+    }
+  },
+  {
+    "task": "rename_exception",
+    "condition": "baseline",
+    "context_files": [
+      "net/client.py"
+    ],
+    "changed_files": [
+      "net/client.py"
+    ],
+    "passed": false,
+    "detail": "Traceback (most recent call last):\n  File \"<string>\", line 2, in <module>\n    from handlers.retry import safe_fetch\n  File \"/private/var/folders/zp/w6481mb14rb6xb1sqdx03cyr0000gn/T/gc_eval_patch_rename_exception_0f8uje9e/handlers/retry.py\", line 1, in <module>\n    from net.client import ClientError,",
+    "latency_s": 0.88,
+    "usage": {
+      "queue_time": 0.211055127,
+      "prompt_tokens": 266,
+      "prompt_time": 0.014439662,
+      "completion_tokens": 269,
+      "completion_time": 0.559065129,
+      "total_tokens": 535,
+      "total_time": 0.573504791,
+      "completion_tokens_details": {
+        "reasoning_tokens": 210
+      }
+    }
+  },
+  {
+    "task": "rename_exception",
+    "condition": "graph",
+    "context_files": [
+      "net/client.py",
+      "handlers/retry.py"
+    ],
+    "changed_files": [
+      "net/client.py",
+      "handlers/retry.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 1.13,
+    "usage": {
+      "queue_time": 0.52763571,
+      "prompt_tokens": 305,
+      "prompt_time": 0.049616158,
+      "completion_tokens": 222,
+      "completion_time": 0.473937797,
+      "total_tokens": 527,
+      "total_time": 0.523553955,
+      "completion_tokens_details": {
+        "reasoning_tokens": 119
+      }
+    }
+  },
+  {
+    "task": "rename_exception",
+    "condition": "embedding",
+    "context_files": [
+      "net/client.py",
+      "handlers/retry.py"
+    ],
+    "changed_files": [
+      "net/client.py",
+      "handlers/retry.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 1.5,
+    "usage": {
+      "queue_time": 0.395723133,
+      "prompt_tokens": 305,
+      "prompt_time": 0.029038285,
+      "completion_tokens": 325,
+      "completion_time": 0.675308534,
+      "total_tokens": 630,
+      "total_time": 0.704346819,
+      "completion_tokens_details": {
+        "reasoning_tokens": 222
+      }
+    }
+  },
+  {
+    "task": "rename_shared_constant",
+    "condition": "baseline",
+    "context_files": [
+      "constants.py"
+    ],
+    "changed_files": [
+      "constants.py"
+    ],
+    "passed": false,
+    "detail": "Traceback (most recent call last):\n  File \"<string>\", line 2, in <module>\n    from worker.pool import run_with_retries\n  File \"/private/var/folders/zp/w6481mb14rb6xb1sqdx03cyr0000gn/T/gc_eval_patch_rename_shared_constant_0bc999cr/worker/pool.py\", line 1, in <module>\n    from constants import MAX_RET",
+    "latency_s": 1.04,
+    "usage": {
+      "queue_time": 0.336217051,
+      "prompt_tokens": 247,
+      "prompt_time": 0.011549298,
+      "completion_tokens": 289,
+      "completion_time": 0.605144535,
+      "total_tokens": 536,
+      "total_time": 0.616693833,
+      "completion_tokens_details": {
+        "reasoning_tokens": 261
+      }
+    }
+  },
+  {
+    "task": "rename_shared_constant",
+    "condition": "graph",
+    "context_files": [
+      "constants.py",
+      "worker/pool.py"
+    ],
+    "changed_files": [
+      "constants.py",
+      "worker/pool.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 0.84,
+    "usage": {
+      "queue_time": 0.310751318,
+      "prompt_tokens": 317,
+      "prompt_time": 0.016104901,
+      "completion_tokens": 203,
+      "completion_time": 0.425324395,
+      "total_tokens": 520,
+      "total_time": 0.441429296,
+      "completion_tokens_details": {
+        "reasoning_tokens": 93
+      }
+    }
+  },
+  {
+    "task": "rename_shared_constant",
+    "condition": "embedding",
+    "context_files": [
+      "constants.py",
+      "worker/pool.py"
+    ],
+    "changed_files": [
+      "constants.py",
+      "worker/pool.py"
+    ],
+    "passed": true,
+    "detail": "OK",
+    "latency_s": 0.73,
+    "usage": {
+      "queue_time": 0.211331412,
+      "prompt_tokens": 317,
+      "prompt_time": 0.014231257,
+      "completion_tokens": 198,
+      "completion_time": 0.424489656,
+      "total_tokens": 515,
+      "total_time": 0.438720913,
+      "completion_tokens_details": {
+        "reasoning_tokens": 88
+      }
+    }
+  }
+]

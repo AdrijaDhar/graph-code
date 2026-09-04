@@ -26,7 +26,7 @@ def resolve_calls(batch: GraphBatch) -> None:
             keep.append(e)
             continue
         callee = (e.props or {}).get("callee") or ""
-        simple = callee.split(".")[-1].split("(")[0].strip()
+        simple = callee.replace("::", ".").split(".")[-1].split("(")[0].strip()
         src_fn = next((f for f in functions if f.id == e.from_id), None)
         target: GraphNode | None = None
         if src_fn:
@@ -57,6 +57,20 @@ def resolve_calls(batch: GraphBatch) -> None:
                         if len(hits) == 1:
                             target = hits[0]
                             break
+        if target is None and src_fn:
+            # same directory, same language (e.g. Java same-package calls with no import statement)
+            src_dir = src_fn.props.get("path", "").rsplit("/", 1)[0]
+            src_lang = src_fn.props.get("language")
+            hits = [
+                f
+                for f in functions
+                if f.id != e.from_id
+                and f.props.get("language") == src_lang
+                and f.props.get("path", "").rsplit("/", 1)[0] == src_dir
+                and f.props["name"] == simple
+            ]
+            if len(hits) == 1:
+                target = hits[0]
         if target is None:
             hits = by_name.get(simple) or []
             if len(hits) == 1:

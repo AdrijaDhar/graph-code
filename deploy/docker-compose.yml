@@ -11,6 +11,8 @@ services:
     restart: unless-stopped
     depends_on:
       - memgraph
+    env_file:
+      - ./api.env
     environment:
       MEMGRAPH_URI: bolt://memgraph:7687
       ROCKSDB_PATH: /data/rocksdb

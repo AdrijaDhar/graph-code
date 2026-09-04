@@ -7,7 +7,11 @@ from sqlalchemy import func, select
 from graphcode.saas.models import UsageEvent, get_session
 
 PLANS = {
-    "free": {"repos": 2, "queries_per_day": 50, "indexes_per_day": 1, "price": 0},
+    # NOTE: indexes_per_day was 1 on free — that blocks trying more than one repo per
+    # day on your own local instance. Raised for solo/local exploration; if this ever
+    # becomes a real multi-tenant hosted product with strangers signing up, tighten
+    # this back down (each index = a real git clone + parse on your VM's CPU/bandwidth).
+    "free": {"repos": 20, "queries_per_day": 500, "indexes_per_day": 50, "price": 0},
     "pro": {"repos": 10, "queries_per_day": 2000, "indexes_per_day": 100, "price": 0},
     "team": {"repos": 50, "queries_per_day": 10000, "indexes_per_day": 500, "price": 0},
 }

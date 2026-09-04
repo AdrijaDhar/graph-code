@@ -1,0 +1,17 @@
+{
+  "language": "typescript",
+  "edges": [
+    {
+      "type": "CALLS",
+      "from_path": "frontend/api.ts",
+      "from_name": "show",
+      "to_path": "frontend/shared/types.ts",
+      "to_name": "describeUser"
+    },
+    {
+      "type": "IMPORTS",
+      "from_path": "frontend/api.ts",
+      "to_path": "frontend/shared/types.ts"
+    }
+  ]
+}

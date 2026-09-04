@@ -1,0 +1,34 @@
+{
+  "language": "c",
+  "edges": [
+    {
+      "type": "CALLS",
+      "from_path": "c/extra.c",
+      "from_name": "compute",
+      "to_path": "c/util.c",
+      "to_name": "parse_c"
+    },
+    {
+      "type": "CALLS",
+      "from_path": "c/main.c",
+      "from_name": "main",
+      "to_path": "c/util.c",
+      "to_name": "parse_c"
+    },
+    {
+      "type": "IMPORTS",
+      "from_path": "c/extra.c",
+      "to_path": "c/util.h"
+    },
+    {
+      "type": "IMPORTS",
+      "from_path": "c/main.c",
+      "to_path": "c/util.h"
+    },
+    {
+      "type": "IMPORTS",
+      "from_path": "c/util.c",
+      "to_path": "c/util.h"
+    }
+  ]
+}

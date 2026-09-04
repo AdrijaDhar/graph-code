@@ -14,8 +14,10 @@ class MemoryStore:
         self.out: dict[str, list[GraphEdge]] = defaultdict(list)
         self.inn: dict[str, list[GraphEdge]] = defaultdict(list)
         self.repo_meta: dict[str, Any] = {}
+        self._ppr_graph_cache = None  # invalidated on any mutation below; see queries/ppr.py
 
     def clear_org(self, org_id: str | None = None) -> None:
+        self._ppr_graph_cache = None
         if org_id is None:
             self.nodes.clear()
             self.out.clear()
@@ -28,6 +30,7 @@ class MemoryStore:
             self.inn.pop(i, None)
 
     def load_batch(self, batch: GraphBatch, org_id: str = "local") -> None:
+        self._ppr_graph_cache = None
         for n in batch.nodes:
             n.props.setdefault("org_id", org_id)
             self.nodes[n.id] = n
@@ -38,6 +41,7 @@ class MemoryStore:
             self.inn[e.to_id].append(e)
 
     def delete_module(self, path: str, org_id: str = "local") -> None:
+        self._ppr_graph_cache = None
         drop = [
             i
             for i, n in self.nodes.items()

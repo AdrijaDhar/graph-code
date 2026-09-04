@@ -1,0 +1,24 @@
+{
+  "language": "java",
+  "edges": [
+    {
+      "type": "CALLS",
+      "from_path": "java/Main.java",
+      "from_name": "run",
+      "to_path": "java/Helper.java",
+      "to_name": "parse"
+    },
+    {
+      "type": "CALLS",
+      "from_path": "java/service/Runner.java",
+      "from_name": "run",
+      "to_path": "java/Helper.java",
+      "to_name": "parse"
+    },
+    {
+      "type": "IMPORTS",
+      "from_path": "java/service/Runner.java",
+      "to_path": "java/Helper.java"
+    }
+  ]
+}

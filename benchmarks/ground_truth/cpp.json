@@ -1,0 +1,24 @@
+{
+  "language": "cpp",
+  "edges": [
+    {
+      "type": "IMPORTS",
+      "from_path": "cpp/derived.cpp",
+      "to_path": "cpp/base.hpp"
+    },
+    {
+      "type": "INHERITS",
+      "from_path": "cpp/derived.cpp",
+      "from_name": "Circle",
+      "to_path": "cpp/base.hpp",
+      "to_name": "Shape"
+    },
+    {
+      "type": "INHERITS",
+      "from_path": "cpp/types.cpp",
+      "from_name": "Child",
+      "to_path": "cpp/types.cpp",
+      "to_name": "Base"
+    }
+  ]
+}

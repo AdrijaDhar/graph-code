@@ -20,6 +20,14 @@ class RocksStore:
         self.path = Path(path)
         self.path.mkdir(parents=True, exist_ok=True)
         self._rocks = None
+        # iter_vectors() is called on every semantic/hybrid query; without this cache
+        # it re-reads and JSON-deserializes every stored vector from disk each time,
+        # which measured ~200ms at ~3k functions (dominating the whole context-compile
+        # latency budget). put_vector keeps this warm as functions are indexed; the
+        # first iter_vectors() call in a fresh process still pays one disk scan to
+        # pick up vectors from a prior run (dual-store hydrate).
+        self._vector_cache: dict[str, tuple[str, list[float]]] = {}
+        self._vector_cache_loaded = False
         try:
             from rocksdict import Rdict, Options
 
@@ -109,13 +117,18 @@ class RocksStore:
     def put_vector(self, function_id: str, org_id: str, vec: list[float]) -> None:
         payload = json.dumps({"org_id": org_id, "vec": vec}).encode()
         self._put("vectors", function_id, payload)
+        self._vector_cache[function_id] = (org_id, vec)
 
     def iter_vectors(self, org_id: str | None = None) -> Iterable[tuple[str, list[float]]]:
-        for key, raw in self._items("vectors"):
-            data = json.loads(raw)
-            if org_id and data.get("org_id") != org_id:
+        if not self._vector_cache_loaded:
+            for key, raw in self._items("vectors"):
+                data = json.loads(raw)
+                self._vector_cache[key] = (data.get("org_id"), data["vec"])
+            self._vector_cache_loaded = True
+        for key, (vec_org_id, vec) in self._vector_cache.items():
+            if org_id and vec_org_id != org_id:
                 continue
-            yield key, data["vec"]
+            yield key, vec
 
     def set_meta(self, key: str, value: str) -> None:
         self._put("meta", key, value.encode())

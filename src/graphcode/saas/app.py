@@ -12,6 +12,7 @@ from sqlalchemy import func
 
 from graphcode.config import settings
 from graphcode.context.compiler import compile_context
+from graphcode.context.pipeline import build_context
 from graphcode.indexer import get_index_service
 from graphcode.queries.call_chain import call_chain
 from graphcode.queries.hybrid import semantic_search
@@ -25,7 +26,7 @@ from graphcode.saas.auth import (
     upsert_github_user,
     verify_session,
 )
-from graphcode.saas.billing import checkout_stub, handle_webhook
+from graphcode.saas.billing import create_checkout_session, handle_webhook_event, parse_webhook_event
 from graphcode.saas.models import Membership, Org, RepoRecord, User, get_session, init_db
 from graphcode.saas.usage import check_quota, record_usage, remaining
 from graphcode.watcher.daemon import get_watch
@@ -159,7 +160,7 @@ def home():
     </form>
   </div>
 
-  <p class="muted">Keep this tab. You do not need Swagger unless you are wiring Cursor.</p>
+  <p class="muted">Keep this tab. You do not need Swagger unless you are wiring an MCP client (see <code>graphcode chat</code>).</p>
 </body>
 </html>"""
 
@@ -364,6 +365,14 @@ def q_chain(symbol: str, ctx=Depends(require_user)):
     return out
 
 
+def _semantic_hits_for(svc, prompt: str, files: list[str] | None, symbols: list[str] | None):
+    query_text = prompt or next(iter((symbols or []) + (files or [])), "")
+    if not query_text:
+        return None
+    hits = semantic_search(svc, query_text, k=40)
+    return [(h["id"], h["score"]) for h in hits.get("hits") or []]
+
+
 @app.post("/v1/context/compile")
 def q_ctx(body: QueryIn, ctx=Depends(require_user)):
     _, org = ctx
@@ -371,6 +380,7 @@ def q_ctx(body: QueryIn, ctx=Depends(require_user)):
     if not ok:
         raise HTTPException(429, msg)
     svc = get_index_service()
+    semantic_hits = _semantic_hits_for(svc, body.prompt, body.files, body.symbols)
     text = compile_context(
         svc.memory,
         root=(svc.last_index or {}).get("root"),
@@ -378,9 +388,42 @@ def q_ctx(body: QueryIn, ctx=Depends(require_user)):
         symbols=body.symbols,
         prompt=body.prompt,
         max_tokens=body.max_tokens,
+        semantic_hits=semantic_hits,
     )
     record_usage(org.id, "query.context", tokens_out=len(text.split()))
     return {"context": text}
+
+
+@app.post("/v1/context/structured")
+def q_ctx_structured(body: QueryIn, ctx=Depends(require_user)):
+    """The doc's literal /context contract: seeds, real token accounting, and the
+    per-item tier breakdown (0=seed, 1=caller/callee, 2=type, 3=related) instead of
+    just the flat rendered string."""
+    _, org = ctx
+    ok, msg = check_quota(org.id, org.plan, "query")
+    if not ok:
+        raise HTTPException(429, msg)
+    svc = get_index_service()
+    semantic_hits = _semantic_hits_for(svc, body.prompt, body.files, body.symbols)
+    bundle = build_context(
+        svc.memory,
+        root=(svc.last_index or {}).get("root"),
+        files=body.files,
+        symbols=body.symbols,
+        prompt=body.prompt,
+        max_tokens=body.max_tokens,
+        semantic_hits=semantic_hits,
+    )
+    record_usage(org.id, "query.context", tokens_out=bundle.used_tokens)
+    return {
+        "seeds": bundle.seeds,
+        "used_tokens": bundle.used_tokens,
+        "items": [
+            {"qid": it.qid, "path": it.path, "tier": it.tier, "tokens": it.tokens, "text": it.text}
+            for it in bundle.items
+        ],
+        "rendered_prompt": bundle.rendered_prompt,
+    }
 
 
 @app.get("/v1/queries/semantic")
@@ -413,13 +456,27 @@ def keys(ctx=Depends(require_user)):
 
 @app.post("/v1/billing/checkout")
 def billing(plan: str = "pro", ctx=Depends(require_user)):
-    return checkout_stub(plan)
+    _, org = ctx
+    return create_checkout_session(plan, org.id)
 
 
 @app.post("/v1/billing/webhook")
-async def stripe_hook(request: Request):
-    payload = await request.json()
-    return handle_webhook(payload)
+async def stripe_hook(request: Request, stripe_signature: str | None = Header(default=None)):
+    payload = await request.body()
+    try:
+        event = parse_webhook_event(payload, stripe_signature)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    def _upgrade(org_id: int, customer_id: str, plan: str) -> None:
+        with get_session() as db:
+            org = db.get(Org, org_id)
+            if org:
+                org.plan = plan
+                org.stripe_customer_id = customer_id
+                db.commit()
+
+    return handle_webhook_event(event, _upgrade)
 
 
 @app.post("/v1/watch")

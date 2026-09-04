@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 
 from graphcode.config import settings
 from graphcode.context.compiler import compile_context
+from graphcode.context.pipeline import build_context
 from graphcode.indexer import get_index_service
 from graphcode.queries.call_chain import call_chain
 from graphcode.queries.hybrid import semantic_search
@@ -18,6 +19,14 @@ mcp = FastMCP("graph-code")
 
 def _svc():
     return get_index_service()
+
+
+def _semantic_hits_for(svc, prompt: str, files: list[str] | None, symbols: list[str] | None):
+    query_text = prompt or next(iter((symbols or []) + (files or [])), "")
+    if not query_text:
+        return None
+    hits = semantic_search(svc, query_text, k=40)
+    return [(h["id"], h["score"]) for h in hits.get("hits") or []]
 
 
 @mcp.tool()
@@ -61,6 +70,7 @@ def graph_compile_context(
     """Compile structural graph context for an LLM coding agent."""
     svc = _svc()
     root = (svc.last_index or {}).get("root")
+    semantic_hits = _semantic_hits_for(svc, prompt, files, symbols)
     return compile_context(
         svc.memory,
         root=root,
@@ -68,7 +78,55 @@ def graph_compile_context(
         symbols=symbols,
         prompt=prompt,
         max_tokens=max_tokens or settings.max_context_tokens,
+        semantic_hits=semantic_hits,
     )
+
+
+@mcp.tool()
+def graph_get_context(
+    file: str,
+    symbol: str | None = None,
+    prompt: str | None = None,
+    token_budget: int = 8000,
+) -> str:
+    """Like graph_compile_context, but through the tiered pipeline contract
+    (context/pipeline.py): Tier 0 seed body, Tier 1 direct callers/callees (signature),
+    Tier 2 related types (signature), Tier 3 everything else (name only) — packed by
+    real token count, not word count. Returns the rendered prompt string."""
+    svc = _svc()
+    root = (svc.last_index or {}).get("root")
+    files = [file] if file else None
+    symbols = [symbol] if symbol else None
+    semantic_hits = _semantic_hits_for(svc, prompt or "", files, symbols)
+    bundle = build_context(
+        svc.memory,
+        root=root,
+        files=files,
+        symbols=symbols,
+        prompt=prompt or "",
+        max_tokens=token_budget or settings.max_context_tokens,
+        semantic_hits=semantic_hits,
+    )
+    return bundle.rendered_prompt
+
+
+@mcp.tool()
+def graph_read_file(path: str) -> str:
+    """Read the exact current content of a file in the indexed repo, by path relative
+    to the repo root. Use this before proposing an edit to a file so the edit is based
+    on real content rather than a guess."""
+    root = (_svc().last_index or {}).get("root")
+    if not root:
+        return "error: no repo indexed yet, call graph_index_repo first"
+    root_p = Path(root).resolve()
+    target = (root_p / path).resolve()
+    if root_p not in target.parents and target != root_p:
+        return f"error: path escapes repo root: {path}"
+    if not target.is_file():
+        return f"error: no such file: {path}"
+    if target.stat().st_size > settings.max_file_bytes:
+        return f"error: file too large: {path}"
+    return target.read_text(encoding="utf-8", errors="replace")
 
 
 @mcp.tool()

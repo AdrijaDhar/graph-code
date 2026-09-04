@@ -1,0 +1,29 @@
+{
+  "language": "rust",
+  "edges": [
+    {
+      "type": "CALLS",
+      "from_path": "rust/lib.rs",
+      "from_name": "use_parse",
+      "to_path": "rust/util.rs",
+      "to_name": "parse"
+    },
+    {
+      "type": "CALLS",
+      "from_path": "rust/service.rs",
+      "from_name": "combine",
+      "to_path": "rust/util.rs",
+      "to_name": "parse"
+    },
+    {
+      "type": "IMPORTS",
+      "from_path": "rust/lib.rs",
+      "to_path": "rust/util.rs"
+    },
+    {
+      "type": "IMPORTS",
+      "from_path": "rust/service.rs",
+      "to_path": "rust/util.rs"
+    }
+  ]
+}
