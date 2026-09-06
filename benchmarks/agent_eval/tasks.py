@@ -14,6 +14,31 @@ If a caller file elsewhere in the repo isn't also updated, the check fails with 
 clean, deterministic Python exception (ImportError/TypeError/AttributeError) —
 exactly the kind of break a graph-context agent should catch and a same-file-only
 agent should miss.
+
+Most of these are renames/signature changes, where the caller necessarily repeats the
+changed symbol's own name as text (you can't call `parse_config` without writing
+"parse_config") — which means embedding similarity can find the right file too, by
+matching that shared vocabulary, same as the graph does.
+
+`polymorphic_interface_change` was added specifically to try to break that tie: an
+INHERITS-based interface change where the file needing a fix (`circle.py`) doesn't
+call the changed method by name at all, and the *new* method it must add
+(`perimeter()`) doesn't appear anywhere in that file yet either. The intent was a case
+graph traversal finds structurally but embedding can't find by text — and diluting the
+candidate pool with several unrelated noise files (confirmed empirically: none of them
+crack the top-5 semantic hits) didn't produce that separation either.
+
+What actually happened, checked directly against `queries/hybrid.semantic_search`:
+embedding still finds `circle.py`, because `Circle` implements `Shape`'s existing
+`name()`/`area()` methods — inherited interface methods it must share names with by
+definition of implementing the interface. That shared vocabulary (not the new
+`perimeter()` requirement) is what pulls `circle.py` into the top-k, regardless of how
+much unrelated noise surrounds it. Kept in the suite anyway as a genuine cross-file
+"complete the interface contract" task — it's still a real, useful check, just not the
+clean graph-vs-embedding separator it was designed to be. Take-away: isolating that
+distinction on a small synthetic repo may not be achievable with realistic, well-named
+code, since meaningful shared names are inherent to good interface design; M2's
+recall@10 numbers on real repos (`eval/README.md`) are the more solid evidence for it.
 """
 
 from __future__ import annotations
@@ -249,6 +274,84 @@ TASKS: list[Task] = [
             "    return 'success'\n"
             "result = run_with_retries(flaky)\n"
             "assert result == 'success' and calls['n'] == 3, (result, calls)\n"
+            "print('OK')\n"
+        ),
+    ),
+    Task(
+        id="polymorphic_interface_change",
+        prompt=(
+            "Update `Shape.describe` in shapes.py to also report a perimeter value — "
+            "the returned string should look like '<name>: area=<A>, perimeter=<P>', "
+            "calling a new `self.perimeter()` method. Every subclass of Shape defined "
+            "anywhere in this repository needs a matching `perimeter()` implementation "
+            "added, or `describe()` will break for it. Find the subclass(es) yourself; "
+            "don't assume there's only one or that you already know its name."
+        ),
+        primary_file="shapes.py",
+        files={
+            "shapes.py": (
+                "class Shape:\n"
+                "    def name(self):\n"
+                "        return 'shape'\n\n"
+                "    def area(self):\n"
+                "        raise NotImplementedError\n\n"
+                "    def describe(self):\n"
+                "        return f'{self.name()}: area={self.area():.2f}'\n"
+            ),
+            "circle.py": (
+                "from shapes import Shape\n\n\n"
+                "class Circle(Shape):\n"
+                "    def __init__(self, r):\n"
+                "        self.r = r\n\n"
+                "    def name(self):\n"
+                "        return 'circle'\n\n"
+                "    def area(self):\n"
+                "        return 3.14159 * self.r * self.r\n"
+            ),
+            # Unrelated files so retrieval has to actually rank/filter candidates —
+            # with only the two files above, top-k semantic search (k=5) would just
+            # return nearly the whole repo regardless of relevance, which wouldn't
+            # test anything. None of these should resolve as relevant to the prompt.
+            "logging_utils.py": (
+                "import time\n\n\n"
+                "def log(message):\n"
+                "    print(f'[{time.time()}] {message}')\n\n\n"
+                "def log_error(message):\n"
+                "    log(f'ERROR: {message}')\n"
+            ),
+            "config.py": (
+                "import json\n\n\n"
+                "def load_config(path):\n"
+                "    with open(path) as f:\n"
+                "        return json.load(f)\n\n\n"
+                "def save_config(path, data):\n"
+                "    with open(path, 'w') as f:\n"
+                "        json.dump(data, f)\n"
+            ),
+            "strings.py": (
+                "def slugify(text):\n"
+                "    return text.lower().replace(' ', '-')\n\n\n"
+                "def truncate(text, length):\n"
+                "    return text[:length] + '...' if len(text) > length else text\n"
+            ),
+            "cache.py": (
+                "_STORE = {}\n\n\n"
+                "def cache_get(key):\n"
+                "    return _STORE.get(key)\n\n\n"
+                "def cache_set(key, value):\n"
+                "    _STORE[key] = value\n"
+            ),
+        },
+        check_script=(
+            "import sys; sys.path.insert(0, '.')\n"
+            "from circle import Circle\n"
+            # r=3: area (pi*r^2=28.27) and perimeter (2*pi*r=18.85) are clearly
+            # distinct numbers, unlike r=2 where they'd coincidentally match —
+            # this actually verifies perimeter() is correctly computed, not just present.
+            "result = Circle(3).describe()\n"
+            "assert 'perimeter=' in result, result\n"
+            "assert '28.27' in result, result\n"
+            "assert '18.85' in result, result\n"
             "print('OK')\n"
         ),
     ),

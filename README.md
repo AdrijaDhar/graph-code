@@ -43,6 +43,22 @@ doing real tool-calling — the agent decides when to call `graph_blast_radius`,
 written to disk. Any other MCP client (Claude Code, Claude Desktop, etc.) can also
 launch `python -m graphcode.mcp.server` directly if you'd rather use one of those.
 
+Verified live end-to-end (real Groq calls, real repo): asked it to rename a function in
+`utils.py`, and it correctly proposed the rename **and** the caller's updated import +
+call site in a different file — the actual cross-file behavior this project targets.
+Getting there surfaced and fixed real integration bugs, not just the happy path: Groq
+rejects the *entire* request server-side if the model hallucinates a tool name (caught
+and retried with the valid names instead of crashing), a large tool result can push a
+single request over Groq's free-tier request-size cap (individual tool results are now
+truncated), the free tier's 8000-tokens-per-minute budget is a rolling window that a
+multi-tool-call turn can exhaust mid-conversation (now backed off and retried instead
+of crashing), and a closed/piped stdin during the apply-diff confirmation prompt used
+to crash with a raw `EOFError` instead of just skipping the file. All covered by
+`tests/test_mcp_client.py`. Practical note: on the free tier this reasoning model's
+8000 TPM budget is tight enough that a complex multi-file task may need a couple of
+tries or hit the round limit — the system prompt caps tool calls at 3 per turn to fit
+inside it.
+
 Web UI (paste any public GitHub URL and try it):
 
 ```bash

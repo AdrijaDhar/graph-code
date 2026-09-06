@@ -15,10 +15,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import tempfile
 import time
 from pathlib import Path
+
+import httpx
 
 from benchmarks.agent_eval.tasks import TASKS, Task
 from graphcode.indexer import IndexService
@@ -26,6 +29,8 @@ from graphcode.llm.groq_client import DEFAULT_MODEL, GroqNotConfigured, chat
 from graphcode.patch import parse_file_blocks
 from graphcode.queries.hybrid import semantic_search
 from graphcode.queries.paths import blast_radius
+
+_RETRY_AFTER_RE = re.compile(r"try again in ([\d.]+)s")
 
 RESULTS_JSON = Path(__file__).parent.parent / "results" / "agent_eval.json"
 RESULTS_MD = Path(__file__).parent.parent / "results" / "agent_eval.md"
@@ -106,6 +111,24 @@ def _apply_patch(task: Task, root: Path, response: str) -> list[str]:
     return changed
 
 
+def _chat_with_backoff(messages: list[dict], model: str, max_attempts: int = 5) -> tuple[str, dict]:
+    """21 sequential calls (7 tasks x 3 conditions) against Groq's free-tier 8000
+    tokens-per-minute budget will hit 429s partway through a run — confirmed live.
+    The error message includes an exact "try again in Xs" hint; use it instead of
+    guessing a backoff."""
+    for attempt in range(max_attempts):
+        try:
+            return chat(messages, model=model)
+        except httpx.HTTPStatusError as exc:
+            if exc.response is None or exc.response.status_code != 429:
+                raise
+            match = _RETRY_AFTER_RE.search(exc.response.text)
+            wait_s = float(match.group(1)) + 0.5 if match else 10 * (attempt + 1)
+            print(f"  [rate limited, waiting {wait_s:.1f}s] {exc.response.text[:150]}")
+            time.sleep(wait_s)
+    raise RuntimeError("Groq rate limit persisted after repeated retries")
+
+
 def run_task_condition(task: Task, condition: str, model: str) -> dict:
     ctx_fn = CONDITIONS[condition]
     src_root = Path(tempfile.mkdtemp(prefix=f"gc_eval_src_{task.id}_"))
@@ -115,7 +138,7 @@ def run_task_condition(task: Task, condition: str, model: str) -> dict:
     messages = _build_messages(task, ctx)
     t0 = time.time()
     try:
-        response, usage = chat(messages, model=model)
+        response, usage = _chat_with_backoff(messages, model)
     except GroqNotConfigured as exc:
         return {"task": task.id, "condition": condition, "error": str(exc)}
     latency_s = time.time() - t0

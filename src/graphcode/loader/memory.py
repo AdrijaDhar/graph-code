@@ -41,21 +41,46 @@ class MemoryStore:
             self.inn[e.to_id].append(e)
 
     def delete_module(self, path: str, org_id: str = "local") -> None:
+        """Removes a module's nodes plus any edge touching them, in either direction.
+
+        Was O(total graph size) regardless of how small the change: it scanned every
+        node to find matches, scanned every other node's outgoing edge list to strip
+        dangling pointers, then rebuilt `self.inn` from scratch. Profiling a 2000-file
+        repo's single-file reindex (called up to 3x there — the file plus its ripple
+        neighbors, see indexer.reindex_file) showed this as the single largest cost.
+        Fixed to use `self.inn` as an index of "what points at this node" instead of
+        rescanning the whole graph, so cost now scales with how many edges actually
+        touch the dropped nodes, not with total repo size.
+        """
         self._ppr_graph_cache = None
-        drop = [
+        drop = {
             i
             for i, n in self.nodes.items()
             if n.props.get("path") == path and n.props.get("org_id") == org_id
-        ]
+        }
+        if not drop:
+            return
+
+        affected_sources: set[str] = set()
+        for dst in drop:
+            for e in self.inn.get(dst, []):
+                affected_sources.add(e.from_id)
+        for src in affected_sources - drop:
+            if src in self.out:
+                self.out[src] = [e for e in self.out[src] if e.to_id not in drop]
+
+        affected_targets: set[str] = set()
+        for src in drop:
+            for e in self.out.get(src, []):
+                affected_targets.add(e.to_id)
+        for dst in affected_targets - drop:
+            if dst in self.inn:
+                self.inn[dst] = [e for e in self.inn[dst] if e.from_id not in drop]
+
         for i in drop:
             self.nodes.pop(i, None)
             self.out.pop(i, None)
-        for src, edges in list(self.out.items()):
-            self.out[src] = [e for e in edges if e.to_id not in drop]
-        self.inn = defaultdict(list)
-        for src, edges in self.out.items():
-            for e in edges:
-                self.inn[e.to_id].append(e)
+            self.inn.pop(i, None)
 
     def counts(self) -> dict[str, int]:
         c: dict[str, int] = defaultdict(int)

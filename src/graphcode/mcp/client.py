@@ -19,6 +19,7 @@ import os
 import sys
 from pathlib import Path
 
+import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -29,20 +30,21 @@ SYSTEM_PROMPT = (
     "You are a coding agent for a single repository, working through MCP tools that "
     "query a structural code graph (functions, classes, imports, calls) built with "
     "Tree-sitter. The repository is already indexed.\n\n"
-    "Before proposing any change:\n"
-    "- Use graph_blast_radius, graph_shortest_path, graph_call_chain, "
-    "graph_compile_context, or graph_semantic_search to understand what a change "
-    "affects elsewhere in the repo — callers, importers, subclasses.\n"
-    "- Use graph_read_file to get the exact current content of any file before you "
-    "edit it. Never guess a file's content.\n\n"
-    "When you are ready to make the change, respond with ONLY the complete new content "
-    "of every file you add or modify, one block per file, in exactly this format and "
-    "nothing else:\n\n"
+    "You have a strict tool-call budget — at most 3 tool calls total before you must "
+    "propose the change. Prefer graph_compile_context or graph_get_context first: they "
+    "return blast-radius, call chains, AND relevant source in one call, which is almost "
+    "always enough. Only call graph_read_file for a file you're about to edit and "
+    "haven't seen exact content for yet. Do not call graph_semantic_search, "
+    "graph_call_chain, graph_blast_radius, and graph_read_file all separately for the "
+    "same symbol — that wastes your budget on redundant context.\n\n"
+    "When you are ready to make the change (by your 3rd tool call at the latest), "
+    "respond with ONLY the complete new content of every file you add or modify, one "
+    "block per file, in exactly this format and nothing else:\n\n"
     "<<<FILE path/to/file.py>>>\n"
     "<full new content of that file>\n"
     "<<<END>>>\n\n"
     "Do not include explanations outside the FILE blocks once you are ready to propose "
-    "the change. It's fine to call tools across multiple turns first."
+    "the change."
 )
 
 
@@ -78,15 +80,78 @@ class GraphCodeAgent:
         text = "".join(b.text for b in result.content if getattr(b, "type", None) == "text")
         if result.isError:
             return f"error calling {name}: {text}"
+        # Groq's free tier caps at 8000 tokens *per request* (confirmed live: an
+        # accumulated conversation with a couple of tool results hit 9903 and got
+        # rejected with 413) — cap individual tool results so a single graph_read_file
+        # on a large file or a wide semantic_search can't blow the whole budget by itself.
+        limit = 3000
+        if len(text) > limit:
+            text = text[:limit] + f"\n...[truncated, {len(text) - limit} more characters]"
         return text
+
+    async def _chat_with_recovery(self, prompt: str, valid_names: set[str], verbose: bool, max_attempts: int = 5) -> dict:
+        """Wraps chat_with_tools with recovery for three things confirmed live against
+        Groq's free tier, none of which should crash the whole CLI session:
+
+        1. 400 "tool X not in request.tools" — the model hallucinated a tool name
+           (seen: "graph_search" instead of "graph_semantic_search"). No assistant
+           message comes back at all in this case, so there's nothing to inspect
+           client-side; tell it the valid names and retry.
+        2. 413 "request too large" — this one request's own size exceeds the limit.
+           Messages can't be trimmed piecemeal (the API also validates that every
+           "tool" message immediately follows the assistant message that requested
+           it, so removing one side of a pair just trades one 400 for another), so
+           reset to system + the original prompt: guaranteed valid, guaranteed to
+           fit, at the cost of this turn's accumulated tool-call context.
+        3. 429 "rate limit reached ... tokens per minute" — a *rolling* per-minute
+           budget, confirmed by the same request succeeding moments later once usage
+           drained. Resetting context doesn't help here (the server-side counter
+           doesn't care how big your next request is); a short wait does.
+
+        Kept separate from run_turn's tool-calling round loop so these transient
+        retries don't eat into max_rounds, which is meant to bound actual progress."""
+        kwargs: dict = {"tools": self.tools}
+        if self.model:
+            kwargs["model"] = self.model
+        for attempt in range(max_attempts):
+            try:
+                message, _usage = chat_with_tools(self.messages, **kwargs)
+                return message
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code if exc.response is not None else None
+                body = exc.response.text if exc.response is not None else str(exc)
+                if status == 400 and "not in request.tools" in body:
+                    if verbose:
+                        print(f"  [warning] invalid tool name, retrying: {body[:200]}")
+                    self.messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "That tool call failed: you used a tool name that doesn't exist. "
+                                f"Valid tool names are exactly: {sorted(valid_names)}. Try again."
+                            ),
+                        }
+                    )
+                    continue
+                if status == 413 and len(self.messages) > 2:
+                    if verbose:
+                        print(f"  [warning] request too large, resetting turn context: {body[:200]}")
+                    self.messages[:] = [self.messages[0], {"role": "user", "content": prompt}]
+                    continue
+                if status == 429:
+                    wait_s = 10 * (attempt + 1)
+                    if verbose:
+                        print(f"  [warning] rate limited, waiting {wait_s}s: {body[:200]}")
+                    await asyncio.sleep(wait_s)
+                    continue
+                raise
+        raise RuntimeError("Groq API kept failing (invalid tool calls / rate limits) after repeated retries.")
 
     async def run_turn(self, prompt: str, max_rounds: int = 8, verbose: bool = True) -> str:
         self.messages.append({"role": "user", "content": prompt})
+        valid_names = {t["function"]["name"] for t in self.tools}
         for _ in range(max_rounds):
-            kwargs: dict = {"tools": self.tools}
-            if self.model:
-                kwargs["model"] = self.model
-            message, _usage = chat_with_tools(self.messages, **kwargs)
+            message = await self._chat_with_recovery(prompt, valid_names, verbose)
             self.messages.append(message)
             tool_calls = message.get("tool_calls") or []
             if not tool_calls:
@@ -99,7 +164,10 @@ class GraphCodeAgent:
                     args = {}
                 if verbose:
                     print(f"  [tool] {name}({args})")
-                result_text = await self._call_tool(name, args)
+                if name not in valid_names:
+                    result_text = f"error: no such tool '{name}'. Valid tools: {sorted(valid_names)}"
+                else:
+                    result_text = await self._call_tool(name, args)
                 self.messages.append(
                     {"role": "tool", "tool_call_id": call["id"], "content": result_text}
                 )
@@ -116,7 +184,10 @@ class GraphCodeAgent:
             new_content = new_content.strip("\n") + "\n"
             diff = unified_diff(old_content, new_content, path)
             print(diff or f"(no textual change to {path})")
-            answer = input(f"Apply changes to {path}? [y/N] ").strip().lower()
+            try:
+                answer = input(f"Apply changes to {path}? [y/N] ").strip().lower()
+            except EOFError:
+                answer = "n"
             if answer == "y":
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(new_content)

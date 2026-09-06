@@ -15,6 +15,22 @@ def test_real_embedding_model_loaded():
     assert encoder._MODEL, "fastembed did not load; semantic search would silently run on fake hash vectors"
 
 
+def test_embed_texts_matches_embed_text_per_item():
+    """Batched embedding must give the same vectors as calling embed_text one at a
+    time — indexer.py switched to this to cut per-function ONNX round trips."""
+    texts = ["def a(): pass", "def b(): return 1", "class C: pass"]
+    batched = encoder.embed_texts(texts)
+    assert len(batched) == len(texts)
+    for text, vec in zip(texts, batched):
+        single = encoder.embed_text(text)
+        assert len(vec) == len(single)
+        assert encoder.cosine(vec, single) > 0.999  # same model, same input, should match (near-)exactly
+
+
+def test_embed_texts_empty_list():
+    assert encoder.embed_texts([]) == []
+
+
 def test_polyglot_index_and_semantic(tmp_path):
     svc = IndexService(rocks_path=tmp_path / "rocks")
     result = svc.index_repo(ROOT, parallel=True)

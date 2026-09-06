@@ -41,7 +41,10 @@ def _post(payload: dict) -> dict:
         json=payload,
         timeout=60,
     )
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        raise httpx.HTTPStatusError(
+            f"{resp.status_code} from Groq: {resp.text}", request=resp.request, response=resp
+        )
     return resp.json()
 
 

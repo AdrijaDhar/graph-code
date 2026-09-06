@@ -103,9 +103,10 @@ equivalent recall.
 ## M2 — Retrieval eval (git co-change ground truth)
 
 See `eval/README.md` and `eval/results/*.md` for the full report — real recall@10/MRR
-across 5 retrieval methods on 2 cloned repos with real commit history (125 queries
-total, ground truth mined for free from `git log`, not hand-labeled), plus the token-
-budget sweep that produced M4's efficiency number above.
+across 5 retrieval methods on 3 cloned repos (Python + Go) with real commit history
+(178 queries total, ground truth mined for free from `git log`, not hand-labeled),
+plus the token-budget sweep that produced M4's efficiency number above. The Go repo is
+the one place a claim didn't generalize cleanly — see below.
 
 ## M5 — Incremental updates + latency
 
@@ -131,7 +132,38 @@ forces it immediately (called by `WatchDaemon.stop()` so nothing pending is lost
 shutdown). In-memory state updates immediately regardless — only the durability write
 is debounced, so queries are never stale.
 
-Real before/after numbers (`benchmarks/incremental_bench.py --sizes 10,100,500,2000`):
+**Update**: the first pass at this (below the line) shipped the correctness fix with
+p95 at 2000 files sitting right at the <150ms target, sometimes just over, and a
+*guess* at the root cause (full-graph lookup rebuilding in the resolver). Profiling
+the actual slow case (`cProfile` on a real 2000-file reindex) showed that guess was
+wrong: the resolver wasn't the bottleneck. Two real costs were:
+
+1. `MemoryStore.delete_module` rebuilt `self.inn` from scratch by re-scanning every
+   edge in the entire graph, on every call — and it's called up to 3x per reindex
+   (the file plus its ripple neighbors). Fixed to use the existing `self.inn`/`self.out`
+   indices to find exactly which edges touch the dropped nodes, instead of rescanning
+   everything — cost now scales with edges actually touching the change, not repo size.
+2. Function embeddings were computed one `embed_text()` ONNX call per function.
+   `embed.encoder.embed_texts()` now batches them into a single model call —
+   `indexer.py` uses it in both `index_repo` and `reindex_file`.
+
+Real before/after numbers (`benchmarks/incremental_bench.py --sizes 10,100,500,2000`),
+re-measured after both fixes:
+
+| Files | before (sync snapshot every save) p95 (ms) | after (debounced + optimized) p95 (ms) |
+|---|---|---|
+| 10 | 51.2 | 50.9 |
+| 100 | 89.7 | 87.3 |
+| 500 | 82.9 | 74.4 |
+| 2000 | 123.8 | 88.4–89.7 (2 runs) |
+
+2000 files now clears the <150ms target with real margin (~60ms to spare), reproduced
+across two separate runs — not a borderline pass. `tests/test_memory_store.py` and
+`tests/test_polyglot_embed_rocks.py` cover the two fixes' correctness (edge cleanup in
+both directions, batched vectors matching one-at-a-time results).
+
+<details>
+<summary>First-pass numbers (superseded above, kept for the record)</summary>
 
 | Files | before p95 (ms) | after (debounced) p95 (ms) |
 |---|---|---|
@@ -140,15 +172,7 @@ Real before/after numbers (`benchmarks/incremental_bench.py --sizes 10,100,500,2
 | 500 | 103.8 | 96.5 |
 | 2000 | 190.5 | 137.9–158.6 (varies run to run) |
 
-**Honest result, not rounded up**: p95 at 2000 files hovers right at the <150ms
-target — passes in some runs, marginally fails in others. Root cause: resolving with
-full-graph context (needed for correctness, see above) rebuilds lookup structures
-(`by_name`/`by_path` in `resolver/calls.py`/`resolver/imports.py`) from the whole node
-set on every single-file reindex, the same complexity class as a full reindex's
-resolve step, just skipping the parse step. A real further fix would index those
-lookups incrementally instead of rebuilding per call — noted as a follow-up, not done
-here; shipping a correctness fix that's occasionally 10-60ms over a soft latency
-target beats shipping a fast fix that keeps deleting your edges.
+</details>
 
 ## B3 — Task-level agent impact (`agent_eval/`)
 
@@ -176,26 +200,38 @@ reasoning tokens *and* visible output combined, verified before running this for
 Grading runs the patched repo's hidden check in a subprocess — pass/fail depends only on
 whether the repo actually works after the patch, not on how the fix was made.
 
-### Results (real run, 2026-09-04)
+### Results (real run, 2026-09-06, 7 tasks)
 
 | Condition | Pass rate |
 |---|---|
-| baseline | 0/6 (0%) |
-| graph | 6/6 (100%) |
-| embedding | 6/6 (100%) |
+| baseline | 0/7 (0%) |
+| graph | 7/7 (100%) |
+| embedding | 7/7 (100%) |
 
 **The headline number**: giving the agent *any* context beyond the single named file
 took it from 0% to 100% on tasks that require editing a second file it was never shown
 — the core thesis, proven, not just structurally plausible.
 
 **Honest caveat, confirmed by this real run, not just predicted**: graph and embedding
-tied at 100% — because all six current tasks rename/change a symbol whose caller uses
-the same identifier name, embedding similarity alone finds the right file just as
-reliably as graph traversal does here. This run does not demonstrate the graph's
-advantage *over* embeddings specifically — only that either beats nothing. Isolating
-that would need harder tasks where the caller doesn't share vocabulary with the
-definition (e.g. an interface implementation found only via an `INHERITS` edge, not a
-shared name) — a natural, scoped next addition to `agent_eval/tasks.py`, not done here.
+tied at 100% again, even after deliberately adding a 7th task
+(`polymorphic_interface_change`) designed specifically to break the tie — an
+`INHERITS`-based interface change where the file needing a fix doesn't call the
+changed method by name, and the new method it must add doesn't exist in that file yet
+either. It still didn't separate them: checked directly against
+`queries/hybrid.semantic_search`, embedding finds the subclass anyway, because it
+already implements the base class's *other* interface methods (`name()`/`area()`) and
+so shares that vocabulary regardless of how much unrelated noise surrounds it —
+diluting the candidate pool with 4 unrelated files didn't change this, since shared
+vocabulary beats noise volume in the ranking regardless of pool size. Full reasoning
+and the empirical scores are in `agent_eval/tasks.py`'s module docstring.
+
+**Where this leaves the claim**: isolating "graph beats embedding on task outcome"
+specifically (not "either beats nothing," which is proven) looks like it needs either
+much larger scale or genuinely unrealistic, badly-named code — well-named real code
+tends to share vocabulary exactly where it's structurally related, which gives
+embedding a hook graph doesn't uniquely have. M2's recall@10 numbers on real repos
+(`eval/README.md`) remain the more solid evidence for the graph's specific
+contribution — measured on real code at real scale, not a small synthetic set.
 
 Writes `results/agent_eval.json` (raw, includes token usage/latency per call) and
 `results/agent_eval.md` (pass-rate table).
@@ -205,32 +241,38 @@ Writes `results/agent_eval.json` (raw, includes token usage/latency per call) an
 Every number below is measured and on disk somewhere in this repo — nothing here is
 rounded up or asserted without a run backing it.
 
-**The retrieval ablation grid** (method × token budget), from M2's harness on 2 real
-repos with real commit history — this is the actual ablation the roadmap asked for; it
-didn't need a separate 60-cell matrix because M2/M4 already sweep both axes:
+**The retrieval ablation grid** (method × token budget × repo), from M2's harness on 3
+real repos with real commit history, 2 languages — this is the actual ablation the
+roadmap asked for; it didn't need a separate 60-cell matrix because M2/M4 already sweep
+these axes:
 
 | Axis | Values | Where |
 |---|---|---|
-| Retrieval method | file, semantic, structural_bfs, structural_ppr, hybrid_rrf | `eval/results/click.md`, `eval/results/typer.md` |
+| Retrieval method | file, semantic, structural_bfs, structural_ppr, hybrid_rrf | `eval/results/*.md` |
 | Token budget | 200 / 500 / 1000 / 2000 / 4000 / 8000 | same, "M4" section of each |
-| Repo | pallets/click (54 queries), tiangolo/typer (71 queries) | same |
+| Repo / language | pallets/click (Python, 54 queries), tiangolo/typer (Python, 71), urfave/cli (Go, 53) | same |
 
-Result: `hybrid_rrf` has the best recall@10 on both repos (0.469, 0.426), beating
-`file` (0.000, trivially) and `semantic` (0.342, 0.331) — M3's acceptance criterion,
-met with real numbers, not just shipped code. Gold-recall plateaus by ~1000 tokens
-regardless of method — M4's tiered compiler needs an order of magnitude fewer tokens
-than the old flat-body default for equivalent recall.
+Result: `hybrid_rrf` has the best recall@10 on both Python repos (0.469, 0.426),
+beating `file` (0.000, trivially) and `semantic` (0.342, 0.331) — M3's acceptance
+criterion, met with real numbers on Python. It does **not** hold on the Go repo
+(hybrid 0.331 vs. semantic 0.336, essentially tied) — see `eval/README.md` for the
+likely cause (Go cross-package resolution without `go.mod` is a documented resolver
+limitation, weakening the structural signal specifically there) and why that's stated
+as a caveat rather than smoothed into a universal claim. Gold-recall plateaus by
+~1000 tokens on both languages tested — M4's tiered compiler needs an order of
+magnitude fewer tokens than the old flat-body default for equivalent recall,
+regardless of whether the ranking result itself generalizes.
 
 **The task-outcome ablation** (context condition × task), from M6 — a smaller, sharper
 signal than recall@10: does the *patch* actually work.
 
-| Condition | Pass rate (6 tasks) |
+| Condition | Pass rate (7 tasks) |
 |---|---|
 | baseline (named file only) | 0% |
 | graph (blast_radius) | 100% |
 | embedding (semantic only) | 100% |
 
-**Not run**: a budget axis on the task-outcome eval. The 6 `agent_eval` tasks are
+**Not run**: a budget axis on the task-outcome eval. The 7 `agent_eval` tasks are
 small synthetic fixtures (a few lines per file) — their full content already fits
 comfortably under any reasonable token budget, so sweeping budget here wouldn't
 produce a meaningful gradient, only noise. Forcing that axis to check a box would be
@@ -240,16 +282,18 @@ ablation there would actually mean something.
 
 **The synthesis, in one paragraph**: the graph engine resolves code structure
 correctly (B1: 100% precision/recall on hand-verified edges across 7 languages, after
-finding and fixing 6 real resolver bugs), scales acceptably (B2/M5: sub-30s indexing
-and sub-160ms incremental updates through 2000 files), and the retrieval/compilation
+finding and fixing 6 real resolver bugs), scales well (B2/M5: sub-30s full indexing
+and sub-90ms incremental single-file updates through 2000 files), and the retrieval/compilation
 layer built on top of it (M1/M3/M4: PPR + semantic fusion, tiered token-budgeted
 packing) measurably outperforms naive baselines on both a large-scale automatic proxy
-metric (M2: recall@10 on git co-change ground truth, 125 real queries) and a small,
-sharp outcome metric (M6: does the generated patch actually pass). The one claim this
+metric (M2: recall@10 on git co-change ground truth, 178 real queries across 3 repos)
+and a small, sharp outcome metric (M6: does the generated patch actually pass) — though
+M2's win is Python-specific so far, not yet confirmed on Go. The one claim this
 repo does *not* yet support is "graph retrieval specifically beats semantic-only
-retrieval on task outcomes" — M2's recall@10 shows the graph contributes real signal,
-but M6's 6-task set is too easy (shared vocabulary between caller and callee) to
-separate graph from embedding on pass/fail. That's a precise, scoped gap, not a vague
+retrieval on task outcomes" — M2's recall@10 shows the graph contributes real signal
+on Python, but M6's 7-task set (including one built specifically to try to break this tie, and
+confirmed empirically not to) shares enough vocabulary between caller and callee that
+embedding keeps finding the same files graph traversal does. That's a precise, scoped gap, not a vague
 one — worth stating exactly, not smoothing over.
 
 ## Extending

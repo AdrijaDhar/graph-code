@@ -27,10 +27,8 @@ def _hash_vec(text: str) -> list[float]:
     return vec.tolist()
 
 
-def embed_text(text: str) -> list[float]:
+def _ensure_model():
     global _MODEL
-    if _MODEL is False:
-        return _hash_vec(text)
     if _MODEL is None:
         try:
             from fastembed import TextEmbedding
@@ -38,12 +36,34 @@ def embed_text(text: str) -> list[float]:
             _MODEL = TextEmbedding("sentence-transformers/all-MiniLM-L6-v2")
         except Exception:
             _MODEL = False
-            return _hash_vec(text)
+    return _MODEL
+
+
+def embed_text(text: str) -> list[float]:
+    model = _ensure_model()
+    if model is False:
+        return _hash_vec(text)
     try:
-        vecs = list(_MODEL.embed([text[:4000]]))
+        vecs = list(model.embed([text[:4000]]))
         return [float(x) for x in vecs[0]]
     except Exception:
         return _hash_vec(text)
+
+
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    """Batched form of embed_text — one ONNX run instead of one per text. Indexing a
+    file with N functions used to pay N separate model-inference round trips; this
+    amortizes that into a single call, which matters once N gets past a handful."""
+    if not texts:
+        return []
+    model = _ensure_model()
+    if model is False:
+        return [_hash_vec(t) for t in texts]
+    try:
+        vecs = list(model.embed([t[:4000] for t in texts]))
+        return [[float(x) for x in v] for v in vecs]
+    except Exception:
+        return [_hash_vec(t) for t in texts]
 
 
 def function_text(node: GraphNode, source: str) -> str:

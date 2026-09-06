@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from graphcode.config import EXTENSION_LANGUAGE, settings
-from graphcode.embed.encoder import embed_text, function_text
+from graphcode.embed.encoder import embed_texts, function_text
 from graphcode.loader.memory import MemoryStore
 from graphcode.loader.memgraph import MemgraphStore
 from graphcode.loader.rocksdb_store import RocksStore, file_digest
@@ -144,16 +144,17 @@ class IndexService:
         self.rocks.save_snapshot(org_id, repo_id, batch)
         for rel, lang, source, _ in jobs:
             self.rocks.set_hash(org_id, repo_id, rel, file_digest(source))
-            text_map = {n.id: n for n in batch.nodes if n.props.get("path") == rel}
 
-        # embeddings for functions
+        # embeddings for functions — batched into one model call instead of one per
+        # function (a full index can have thousands; batching amortizes ONNX
+        # inference overhead instead of paying it per function).
         sources = {rel: src for rel, lang, src, _ in jobs}
-        for n in batch.nodes:
-            if n.label != "Function":
-                continue
-            src = sources.get(n.props.get("path", ""), b"")
-            text = function_text(n, src.decode("utf-8", errors="replace"))
-            vec = embed_text(text)
+        fn_nodes = [n for n in batch.nodes if n.label == "Function"]
+        texts = [
+            function_text(n, sources.get(n.props.get("path", ""), b"").decode("utf-8", errors="replace"))
+            for n in fn_nodes
+        ]
+        for n, vec in zip(fn_nodes, embed_texts(texts)):
             self.rocks.put_vector(n.id, org_id, vec)
 
         counts = self.memory.counts()
@@ -274,10 +275,10 @@ class IndexService:
             except Exception:
                 pass
 
-        for n in fresh.nodes:
-            if n.label == "Function":
-                src = src_texts.get(n.props.get("path", ""), "")
-                self.rocks.put_vector(n.id, org_id, embed_text(function_text(n, src)))
+        fn_nodes = [n for n in fresh.nodes if n.label == "Function"]
+        texts = [function_text(n, src_texts.get(n.props.get("path", ""), "")) for n in fn_nodes]
+        for n, vec in zip(fn_nodes, embed_texts(texts)):
+            self.rocks.put_vector(n.id, org_id, vec)
 
         for p in changed_paths:
             fp = root / p
