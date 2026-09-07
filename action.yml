@@ -1,0 +1,42 @@
+name: "Graph-Code Blast Radius"
+description: >
+  Comments what actually depends on the code a PR changes, found by traversing the
+  real call/import graph (Tree-sitter parsed) rather than text search — so it catches
+  a caller that never mentions the changed symbol's name in its own diff.
+author: "Adrija Dhar"
+branding:
+  icon: "git-pull-request"
+  color: "blue"
+
+inputs:
+  direction:
+    description: "upstream (who depends on it) | downstream (what it depends on) | both"
+    required: false
+    default: "upstream"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    # Installs the graphcode *package* from its own repo, not the caller's — a
+    # composite action's steps run inside the calling workflow's checkout, which is
+    # someone else's repo, not graph-code itself.
+    - run: pip install "graphcode @ git+https://github.com/AdrijaDhar/graph-code.git"
+      shell: bash
+    - run: >
+        graphcode pr-comment
+        --repo "$GITHUB_WORKSPACE"
+        --base "origin/${{ github.base_ref }}"
+        --head HEAD
+        --direction "${{ inputs.direction }}"
+        --post
+      shell: bash
+      env:
+        # github.token is the same token GITHUB_TOKEN would resolve to, already scoped
+        # by the calling workflow's own `permissions:` block — nothing extra for the
+        # consumer to configure or pass in.
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}

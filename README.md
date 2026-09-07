@@ -129,14 +129,11 @@ structural graph, not text search, so it catches a caller that never mentions th
 changed symbol's name in its own diff.
 
 **No deployment, ever.** It's a workflow file that runs entirely on GitHub's own CI
-infrastructure — not a server you or anyone else hosts. The usage model is exactly
-three steps:
+infrastructure — not a server you or anyone else hosts. Two ways to add it, easiest
+first:
 
-1. Copy `.github/workflows/pr-blast-radius.yml` (already in this repo) into any
-   repo's `.github/workflows/` — yours or anyone else's, it isn't specific to this
-   project's own codebase.
-2. Open a pull request.
-3. Wait about a minute. A comment appears.
+**As a reusable action** (`action.yml`, at the root of this repo) — paste this into
+`.github/workflows/pr-blast-radius.yml` in *any* repo, yours or anyone else's:
 
 ```yaml
 name: blast-radius-comment
@@ -153,12 +150,21 @@ jobs:
         with:
           fetch-depth: 0   # needed: diffs against origin/<base> by name, and blast
                             # radius needs real repo structure, not a shallow clone
+      - uses: AdrijaDhar/graph-code@main
+```
+
+That's the whole thing — Python setup, installing `graphcode`, and the `pr-comment
+--post` invocation all happen inside the action itself
+([`action.yml`](action.yml)). Open a pull request, wait about a minute, see the
+comment.
+
+**Or, if you want to see every step explicitly** (what the action above expands to
+under the hood — useful if you want to change `--direction` or debug something):
+
+```yaml
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Installs the graphcode *package* from its own repo — not `pip install -e .`,
-      # which would instead try to install *this* repo (yours) as if it were
-      # graph-code itself.
       - run: pip install "graphcode @ git+https://github.com/AdrijaDhar/graph-code.git"
       - run: >
           graphcode pr-comment --repo . --base origin/${{ github.base_ref }}
