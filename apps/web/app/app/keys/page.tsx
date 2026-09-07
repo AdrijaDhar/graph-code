@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Button, Card, Muted, PageHeading, SectionHeading, Spinner } from "../../components/ui";
 import { KeyIcon } from "../../components/Icon";
+import { apiFetch } from "../../lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -13,7 +14,7 @@ export default function Keys() {
   async function createKey() {
     setBusy(true);
     try {
-      const res = await fetch(`${API}/v1/keys`, { method: "POST", credentials: "include" });
+      const res = await apiFetch(`${API}/v1/keys`, { method: "POST" });
       setOut(await res.json());
       setCopied(false);
     } finally {

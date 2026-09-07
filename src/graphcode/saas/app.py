@@ -4,6 +4,7 @@ import html
 import secrets
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -92,18 +93,32 @@ class QueryIn(BaseModel):
 def _user_from_request(request: Request, authorization: str | None) -> tuple[User | None, Org | None]:
     s = get_session()
     try:
+        bearer = None
         if authorization and authorization.lower().startswith("bearer "):
             from graphcode.saas.auth import org_for_api_key
 
-            token = authorization.split(" ", 1)[1]
-            org = org_for_api_key(token)
+            bearer = authorization.split(" ", 1)[1]
+            org = org_for_api_key(bearer)
             if org:
                 mem = s.query(Membership).filter_by(org_id=org.id).first()
                 user = s.get(User, mem.user_id) if mem else None
                 return user, org
-        cookie = request.cookies.get("gc_session")
-        if cookie:
-            payload = verify_session(cookie)
+        # Session identity, checked as a signed token from either a cookie or a
+        # Bearer header — the Bearer path exists because a `gc_session` cookie set
+        # only during the OAuth callback's redirect "bounce" (GitHub -> our API
+        # domain -> immediately on to the frontend domain) gets silently discarded by
+        # modern browsers' bounce-tracking mitigations before it's ever stored, on a
+        # deployment where the frontend and API are on different domains (confirmed
+        # live: gc_session never appeared in the cookie store at all, in Safari,
+        # Chrome, and Chrome Incognito alike — not a SameSite/Secure misconfiguration,
+        # since the header itself was verified correct). auth_callback below hands the
+        # same signed token to the frontend via the redirect URL instead, for the
+        # frontend to carry itself as an Authorization header from then on, which no
+        # cookie policy touches. The cookie path is kept too — it's what actually
+        # works for same-site/local-dev deployments, so this isn't a regression there.
+        session_token = bearer or request.cookies.get("gc_session")
+        if session_token:
+            payload = verify_session(session_token)
             if payload and payload.startswith("u:"):
                 uid = int(payload.split(":")[1])
                 user = s.get(User, uid)
@@ -260,8 +275,17 @@ def auth_callback(request: Request, code: str = "", state: str = ""):
     if not info:
         raise HTTPException(400, "oauth failed")
     user, org = upsert_github_user(str(info.get("id")), info.get("login") or "user", info.get("name") or "")
-    resp = RedirectResponse(url=f"{settings.frontend_url}/app")
-    resp.set_cookie("gc_session", sign_session(f"u:{user.id}"), **_SESSION_COOKIE_KWARGS)
+    token = sign_session(f"u:{user.id}")
+    # The token is also handed to the frontend via the redirect URL, not just the
+    # cookie below — a cookie set only during this callback's redirect "bounce"
+    # (GitHub -> here -> immediately on to the frontend's own domain) is exactly the
+    # pattern modern browsers' bounce-tracking mitigations silently discard before the
+    # frontend ever gets a chance to use it, on a deployment where the frontend and
+    # API are on different domains (confirmed live, see _user_from_request). The
+    # frontend picks this up once, stores it, and sends it as a Bearer header from
+    # then on — see apps/web/app/lib/api.ts.
+    resp = RedirectResponse(url=f"{settings.frontend_url}/app?token={quote(token)}")
+    resp.set_cookie("gc_session", token, **_SESSION_COOKIE_KWARGS)
     resp.delete_cookie("oauth_state")
     return resp
 

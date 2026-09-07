@@ -21,6 +21,7 @@ import { DependencyGraph, type GraphNode } from "../../components/DependencyGrap
 import { GraphOverview, type OverviewNode } from "../../components/GraphOverview";
 import { SymbolPicker } from "../../components/SymbolPicker";
 import { ExternalLinkIcon, GitBranchIcon, NetworkIcon, RouteIcon, SearchIcon, SparkleIcon, XIcon } from "../../components/Icon";
+import { apiFetch } from "../../lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -110,7 +111,7 @@ export default function RepoPlaygroundClient() {
     setOverview(null);
     setSuggestions(null);
     if (!id) return;
-    fetch(`${API}/v1/repos`, { credentials: "include" })
+    apiFetch(`${API}/v1/repos`)
       .then((r) => r.json())
       .then((list) => setRepo((Array.isArray(list) ? list : []).find((r: any) => String(r.id) === id)));
   }, [id]);
@@ -127,7 +128,7 @@ export default function RepoPlaygroundClient() {
     setOverview(null);
     setSuggestions(null);
     try {
-      const res = await fetch(`${API}/v1/repos/${id}/index`, { method: "POST", credentials: "include" });
+      const res = await apiFetch(`${API}/v1/repos/${id}/index`, { method: "POST" });
       if (!res.ok) {
         setLoadStatus(`Failed: ${res.status} ${await res.text()}`);
         setIsActive(false);
@@ -148,7 +149,7 @@ export default function RepoPlaygroundClient() {
   async function loadOverview() {
     setOverviewBusy(true);
     try {
-      const res = await fetch(`${API}/v1/graph/overview`, { credentials: "include" });
+      const res = await apiFetch(`${API}/v1/graph/overview`);
       if (res.ok) setOverview(await res.json());
     } finally {
       setOverviewBusy(false);
@@ -158,7 +159,7 @@ export default function RepoPlaygroundClient() {
   async function loadSuggestions() {
     setSuggestionsBusy(true);
     try {
-      const res = await fetch(`${API}/v1/graph/suggestions`, { credentials: "include" });
+      const res = await apiFetch(`${API}/v1/graph/suggestions`);
       if (res.ok) setSuggestions((await res.json()).suggestions || []);
     } finally {
       setSuggestionsBusy(false);
@@ -171,9 +172,7 @@ export default function RepoPlaygroundClient() {
     const e = Math.max(end || s + 30, s + 5);
     setSourceView({ path, start: s, end: e, text: "", loading: true });
     try {
-      const res = await fetch(`${API}/v1/files/source?path=${encodeURIComponent(path)}&start=${s}&end=${e}`, {
-        credentials: "include",
-      });
+      const res = await apiFetch(`${API}/v1/files/source?path=${encodeURIComponent(path)}&start=${s}&end=${e}`);
       if (res.ok) {
         const data = await res.json();
         setSourceView({ ...data, loading: false });
@@ -199,11 +198,10 @@ export default function RepoPlaygroundClient() {
     setSourceView(null);
     try {
       const [blastRes, testsRes] = await Promise.all([
-        fetch(
-          `${API}/v1/queries/blast-radius?symbol=${encodeURIComponent(target)}&direction=${overrideDirection ?? direction}`,
-          { credentials: "include" }
+        apiFetch(
+          `${API}/v1/queries/blast-radius?symbol=${encodeURIComponent(target)}&direction=${overrideDirection ?? direction}`
         ),
-        fetch(`${API}/v1/queries/affected-tests?symbol=${encodeURIComponent(target)}`, { credentials: "include" }),
+        apiFetch(`${API}/v1/queries/affected-tests?symbol=${encodeURIComponent(target)}`),
       ]);
       const blast = await blastRes.json();
       const tests = await testsRes.json();
@@ -223,9 +221,8 @@ export default function RepoPlaygroundClient() {
     setToSymbol(to);
     setPathBusy(true);
     try {
-      const res = await fetch(
-        `${API}/v1/queries/shortest-path?from_symbol=${encodeURIComponent(from)}&to_symbol=${encodeURIComponent(to)}`,
-        { credentials: "include" }
+      const res = await apiFetch(
+        `${API}/v1/queries/shortest-path?from_symbol=${encodeURIComponent(from)}&to_symbol=${encodeURIComponent(to)}`
       );
       const data = await res.json();
       setPathResult(data);
@@ -242,9 +239,7 @@ export default function RepoPlaygroundClient() {
     setQuery(q);
     setSemanticBusy(true);
     try {
-      const res = await fetch(`${API}/v1/queries/semantic?query=${encodeURIComponent(q)}&k=8`, {
-        credentials: "include",
-      });
+      const res = await apiFetch(`${API}/v1/queries/semantic?query=${encodeURIComponent(q)}&k=8`);
       const data = await res.json();
       setSemanticResult(data);
       setSourceView(null);
@@ -260,9 +255,7 @@ export default function RepoPlaygroundClient() {
     setChainSymbol(target);
     setChainBusy(true);
     try {
-      const res = await fetch(`${API}/v1/queries/call-chain?symbol=${encodeURIComponent(target)}`, {
-        credentials: "include",
-      });
+      const res = await apiFetch(`${API}/v1/queries/call-chain?symbol=${encodeURIComponent(target)}`);
       const data = await res.json();
       setChainResult(data);
       setSourceView(null);
@@ -290,7 +283,7 @@ export default function RepoPlaygroundClient() {
     setAnswer(null);
     setSourceView(null);
     try {
-      const res = await fetch(`${API}/v1/ask?text=${encodeURIComponent(text)}`, { credentials: "include" });
+      const res = await apiFetch(`${API}/v1/ask?text=${encodeURIComponent(text)}`);
       const result = await res.json();
       if (!res.ok) {
         setAnswer(result?.detail || "Something went wrong answering that — try the tools below directly.");

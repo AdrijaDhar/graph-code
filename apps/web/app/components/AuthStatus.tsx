@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { apiFetch, clearToken } from "../lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -16,11 +17,21 @@ export function AuthStatus() {
   const [demo, setDemo] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetch(`${API}/v1/me`, { credentials: "include" })
+    apiFetch(`${API}/v1/me`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => setDemo(data ? !!data.demo : null))
       .catch(() => setDemo(null));
   }, []);
+
+  // Session identity on the real deployment lives in the Bearer token in
+  // localStorage, not just the gc_session cookie (see lib/api.ts) — clearing only
+  // the cookie server-side would leave that token behind, and the very next page
+  // load would silently sign back in with it. Both need to go for Sign out to work.
+  function signOut(e: React.MouseEvent) {
+    e.preventDefault();
+    clearToken();
+    window.location.href = `${API}/v1/auth/logout`;
+  }
 
   if (demo === null) return null;
 
@@ -38,6 +49,7 @@ export function AuthStatus() {
   return (
     <a
       href={`${API}/v1/auth/logout`}
+      onClick={signOut}
       className="ml-auto px-3 py-1.5 rounded-md text-[#e8eefc]/60 hover:text-white hover:bg-white/[0.06] transition-colors text-sm"
     >
       Sign out

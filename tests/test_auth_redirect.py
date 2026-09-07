@@ -6,6 +6,8 @@ signed-in user's browser back to their own localhost instead of the real site.
 
 from __future__ import annotations
 
+from urllib.parse import unquote
+
 from fastapi.testclient import TestClient
 
 from graphcode.config import settings
@@ -32,8 +34,43 @@ def test_oauth_callback_redirects_to_configured_frontend_url(monkeypatch):
         "/v1/auth/github/callback", params={"code": "fake", "state": "matching-state"}, follow_redirects=False
     )
     assert resp.status_code in (302, 307)
-    assert resp.headers["location"] == "https://example-frontend.test/app"
+    # Carries a one-time signed token in the redirect URL, not just the gc_session
+    # cookie — a cookie set only during this callback's redirect "bounce" (GitHub ->
+    # our API domain -> immediately on to the frontend domain) is exactly what modern
+    # browsers' bounce-tracking mitigations silently discard on a deployment where the
+    # frontend and API are on different domains (confirmed live). The frontend picks
+    # this up once and sends it back as a Bearer header from then on.
+    location = resp.headers["location"]
+    assert location.startswith("https://example-frontend.test/app?token=")
     client.cookies.clear()
+
+
+def test_session_token_from_oauth_redirect_authenticates_via_bearer_header(monkeypatch):
+    """The actual fix for a real production bug: a `gc_session` cookie set only
+    during the OAuth callback's redirect "bounce" (GitHub -> our API domain ->
+    immediately on to the frontend domain) was confirmed live to never reach the
+    browser's cookie store at all, in Safari, Chrome, and Chrome Incognito alike, on
+    a deployment where the frontend and API are on separate domains — modern
+    browsers' bounce-tracking mitigations discard it. The callback now also hands the
+    same signed token to the frontend via the redirect URL, for it to send back as a
+    Bearer header instead — this checks that a request carrying only that header (no
+    cookie at all) authenticates exactly like the cookie used to."""
+    monkeypatch.setattr(
+        app_module, "exchange_github_code", lambda code: {"id": 456, "login": "hubot", "name": "Hu Bot"}
+    )
+    client.cookies.set("oauth_state", "matching-state-2")
+    resp = client.get(
+        "/v1/auth/github/callback", params={"code": "fake", "state": "matching-state-2"}, follow_redirects=False
+    )
+    # The token is URL-encoded in the raw Location header (real browsers decode this
+    # automatically via URLSearchParams, same as lib/api.ts's captureTokenFromUrl) —
+    # decode it here too, or the signature simply won't match.
+    token = unquote(resp.headers["location"].split("token=", 1)[1])
+    client.cookies.clear()  # no cookie at all from here on — Bearer must carry the whole session
+
+    me = client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    assert me.json()["user"]["login"] == "hubot"
 
 
 def test_oauth_callback_rejects_mismatched_state(monkeypatch):

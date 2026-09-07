@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { apiFetch } from "../lib/api";
 
 interface SymbolHit {
   id: string;
@@ -41,7 +42,7 @@ export function SymbolPicker({
       return;
     }
     const handle = setTimeout(() => {
-      fetch(`${apiBase}/v1/symbols/search?q=${encodeURIComponent(text)}`, { credentials: "include" })
+      apiFetch(`${apiBase}/v1/symbols/search?q=${encodeURIComponent(text)}`)
         .then((r) => r.json())
         .then((d) => setHits(d.results || []))
         .catch(() => setHits([]));

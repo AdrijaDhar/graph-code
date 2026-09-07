@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Button, Card, Muted, PageHeading, SectionHeading, Skeleton } from "../../components/ui";
 import { ChartIcon } from "../../components/Icon";
+import { apiFetch } from "../../lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -20,13 +21,13 @@ export default function Usage() {
   const [status, setStatus] = useState("");
 
   useEffect(() => {
-    fetch(`${API}/v1/usage`, { credentials: "include" })
+    apiFetch(`${API}/v1/usage`)
       .then((r) => r.json())
       .then(setU);
   }, []);
 
   async function upgrade() {
-    const res = await fetch(`${API}/v1/billing/checkout?plan=pro`, { method: "POST", credentials: "include" });
+    const res = await apiFetch(`${API}/v1/billing/checkout?plan=pro`, { method: "POST" });
     const data = await res.json();
     if (data.checkout_url && data.checkout_url.startsWith("http")) {
       window.location.href = data.checkout_url;

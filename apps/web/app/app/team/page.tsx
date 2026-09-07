@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Button, Card, EmptyState, Input, Muted, PageHeading, SectionHeading, Skeleton, Spinner } from "../../components/ui";
 import { UsersIcon } from "../../components/Icon";
+import { apiFetch } from "../../lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -12,7 +13,7 @@ export default function Team() {
   const [busy, setBusy] = useState(false);
 
   function load() {
-    fetch(`${API}/v1/org`, { credentials: "include" })
+    apiFetch(`${API}/v1/org`)
       .then((r) => r.json())
       .then(setOrg);
   }
@@ -24,9 +25,8 @@ export default function Team() {
     if (!login.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch(`${API}/v1/org/invite?login=${encodeURIComponent(login.trim())}`, {
+      const res = await apiFetch(`${API}/v1/org/invite?login=${encodeURIComponent(login.trim())}`, {
         method: "POST",
-        credentials: "include",
       });
       setStatus(res.ok ? `Invited ${login.trim()}` : `Failed: ${res.status}`);
       setLogin("");

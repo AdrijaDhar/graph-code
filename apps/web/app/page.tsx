@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Button, Card, Muted, PageHeading } from "./components/ui";
 import { GitHubIcon, GitBranchIcon, NetworkIcon, SearchIcon, ShieldIcon, SparkleIcon } from "./components/Icon";
+import { apiFetch } from "./lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -19,7 +20,7 @@ export default function Home() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetch(`${API}/v1/me`, { credentials: "include" })
+    apiFetch(`${API}/v1/me`)
       .then((r) => setSignedIn(r.ok))
       .catch(() => setSignedIn(false));
   }, []);

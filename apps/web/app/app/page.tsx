@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Badge, Button, Card, ElapsedTimer, EmptyState, Input, Muted, PageHeading, SectionHeading, Skeleton, Spinner } from "../components/ui";
 import { ClockIcon, FolderIcon, GitBranchIcon, NetworkIcon } from "../components/Icon";
+import { apiFetch, captureTokenFromUrl } from "../lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -14,14 +15,20 @@ export default function AppHome() {
   const [busy, setBusy] = useState(false);
 
   function loadRepos() {
-    fetch(`${API}/v1/repos`, { credentials: "include" })
+    apiFetch(`${API}/v1/repos`)
       .then((r) => r.json())
       .then((d) => setRepos(Array.isArray(d) ? d : []))
       .catch(() => setRepos([]));
   }
 
   useEffect(() => {
-    fetch(`${API}/v1/me`, { credentials: "include" })
+    // This is where the OAuth redirect lands — pick up the one-time token the
+    // backend hands back in the URL (see saas/app.py's auth_callback) before doing
+    // anything else, so every fetch below (and every other authenticated page) can
+    // carry it as a Bearer header from now on. See lib/api.ts for why a cookie alone
+    // isn't reliable on this split-domain deployment.
+    captureTokenFromUrl();
+    apiFetch(`${API}/v1/me`)
       .then((r) => r.json())
       .then(setMe)
       .catch(() => setMe({ error: "API offline — is uvicorn running on :8000?" }));
@@ -39,9 +46,8 @@ export default function AppHome() {
     setBusy(true);
     setStatus("Registering repo…");
     try {
-      const createRes = await fetch(`${API}/v1/repos`, {
+      const createRes = await apiFetch(`${API}/v1/repos`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() || deriveName(githubUrl), github_url: githubUrl.trim() }),
       });
@@ -52,10 +58,7 @@ export default function AppHome() {
       }
       const created = await createRes.json();
       setStatus(`Cloning and indexing "${created.name}" — this can take a moment for larger repos…`);
-      const indexRes = await fetch(`${API}/v1/repos/${created.id}/index`, {
-        method: "POST",
-        credentials: "include",
-      });
+      const indexRes = await apiFetch(`${API}/v1/repos/${created.id}/index`, { method: "POST" });
       if (!indexRes.ok) {
         setStatus(`Registered but indexing failed: ${indexRes.status} ${await indexRes.text()}`);
       } else {

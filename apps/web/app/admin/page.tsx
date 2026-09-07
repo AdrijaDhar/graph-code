@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Card, PageHeading, Skeleton, StatTile } from "../components/ui";
 import { ChartIcon, ShieldIcon, UsersIcon } from "../components/Icon";
+import { apiFetch } from "../lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -10,7 +11,7 @@ export default function Admin() {
   const [error, setError] = useState<string>("");
 
   useEffect(() => {
-    fetch(`${API}/v1/admin`, { credentials: "include" })
+    apiFetch(`${API}/v1/admin`)
       .then(async (r) => {
         if (!r.ok) {
           setError(r.status === 403 ? "Admin only — your account isn't in ADMIN_GITHUB_IDS." : `Error ${r.status}`);
