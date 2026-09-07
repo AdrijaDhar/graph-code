@@ -5,6 +5,33 @@ imports, calls) and answer the question text search and plain RAG can't: **"what
 breaks if I change this?"** — plus shortest path, call chains, and hybrid semantic
 search, served to any LLM agent over MCP.
 
+## Why
+
+Two questions matter before any PR merges: *"did I break something I don't know
+about?"* and *"which tests actually prove I didn't?"* Normally you answer those by
+grepping, asking a teammate, or running the entire suite and hoping — all slow, and
+the first two are easy to get wrong on a codebase bigger than fits in your head.
+
+This turns that into something that just happens automatically. Open a PR that
+changes a function used in 50 places across code you didn't write, and — with zero
+setup, before anyone reviews it — a comment lists the real dependents and the real
+tests that exercise it, found by actually tracing the call/import graph, not by
+guessing. It catches exactly what grep misses: a caller three files away that never
+mentions the changed function's name, or a test three calls deep through a helper.
+See the [PR bot](#3-pr-bot-automatic-review-comments) section below for it running
+live on this repo's own PRs.
+
+**Doesn't git already do this?** No — git has zero concept of a function or a call,
+only text diffs; `git blame`/`git diff` tell you *what lines changed*, never *what
+depends on them*. GitHub's "Dependency graph" is a different granularity entirely
+(package dependencies, not in-repo function calls). The closest existing thing is an
+IDE's "Find All References" — real symbol resolution, not text search — but it's a
+manual, one-symbol-at-a-time tool sitting in one developer's editor, and it says
+nothing about which tests matter. What doesn't really exist anywhere mainstream is
+*automatic, aggregated, per-PR* reporting of both blast radius and test impact
+together, visible to every reviewer with zero setup — that's the actual gap here, not
+a missing git feature.
+
 ## What it does
 
 - Nodes: Module, Class, Function, Variable. Edges: CONTAINS, IMPORTS, INHERITS, CALLS.
