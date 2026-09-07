@@ -1,4 +1,5 @@
 import Script from "next/script";
+import { AuthStatus } from "./components/AuthStatus";
 import { NetworkIcon } from "./components/Icon";
 
 export const metadata = {
@@ -57,8 +58,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Admin
             </a>
           </nav>
+          {/* There was previously no way to end a session at all short of manually
+              clearing cookies — confirmed live. AuthStatus shows a real, working Sign
+              out link once actually authenticated via GitHub OAuth, or an honest
+              "Demo mode" label instead of a Sign out link that would look broken on a
+              deployment with no OAuth configured (every request there shares one demo
+              account regardless of cookies — see /v1/me's `demo` flag). */}
+          <AuthStatus />
         </header>
-        <main className="px-6 py-8 max-w-5xl mx-auto">{children}</main>
+        {/* max-w-5xl (1024px) made every page look like a narrow box floating in the
+            middle of the screen on any real monitor — confirmed live, this was the
+            actual "boxed" complaint. 1600px gives the graph visualization real room
+            without going full-bleed (unconstrained width on an ultrawide would make
+            the text-heavy pages uncomfortably wide to read). */}
+        <main className="px-6 py-8 max-w-[1600px] mx-auto">{children}</main>
       </body>
     </html>
   );

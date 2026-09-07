@@ -93,3 +93,79 @@ def blast_radius(
 
 def _node(n: GraphNode) -> dict:
     return {"id": n.id, "label": n.label, **n.props}
+
+
+def graph_overview(store: MemoryStore, org_id: str | None = None, max_nodes: int = 500) -> dict:
+    """A file-level dependency map of the whole indexed repo — every Module node plus
+    the IMPORTS edges between them, sized by how many functions/classes each file
+    contains. This is deliberately module-granularity, not every individual function:
+    a real repo's function-level graph can run into thousands of nodes (confirmed
+    live: one test repo had 5,484 functions), which is both too dense to render
+    meaningfully and far more than a "here's the shape of this codebase" overview
+    needs — a developer opening this wants to see how files relate, not a hairball."""
+
+    def in_org(n: GraphNode) -> bool:
+        return org_id is None or n.props.get("org_id") == org_id
+
+    modules = {n.id: n for n in store.nodes.values() if n.label == "Module" and in_org(n)}
+
+    size_by_module: dict[str, int] = {mid: 0 for mid in modules}
+    for e in store.out.values():
+        for edge in e:
+            if edge.type == "CONTAINS" and edge.from_id in size_by_module and edge.to_id in store.nodes:
+                child = store.nodes[edge.to_id]
+                if child.label in ("Function", "Class"):
+                    size_by_module[edge.from_id] += 1
+
+    edges: list[dict] = []
+    seen_pairs: set[tuple[str, str]] = set()
+    for mid in modules:
+        for e in store.out.get(mid, []):
+            if e.type == "IMPORTS" and e.to_id in modules and e.to_id != mid:
+                pair = (mid, e.to_id)
+                if pair not in seen_pairs:
+                    seen_pairs.add(pair)
+                    edges.append({"source": mid, "target": e.to_id})
+
+    ranked = sorted(modules.values(), key=lambda n: size_by_module.get(n.id, 0), reverse=True)[:max_nodes]
+    kept_ids = {n.id for n in ranked}
+    nodes = [
+        {
+            **_node(n),
+            "size": size_by_module.get(n.id, 0),
+        }
+        for n in ranked
+    ]
+    kept_edges = [e for e in edges if e["source"] in kept_ids and e["target"] in kept_ids]
+    return {"nodes": nodes, "edges": kept_edges, "truncated": len(modules) > max_nodes}
+
+
+def suggest_starting_points(store: MemoryStore, org_id: str | None = None, top: int = 8) -> dict:
+    """Ranks functions/classes by real dependency in-degree — how many *distinct*
+    other functions/classes call or inherit from it — as a fast, deterministic, free
+    proxy for "how central is this to the codebase." Answers the actual first
+    question after indexing an unfamiliar repo: not "what do I query" (a new user has
+    no idea yet), but "what's actually worth understanding first." Deliberately not
+    LLM-backed: this is graph centrality computed in one pass over data already in
+    memory — same cost and same answer every time, no API key, no rate limit, no
+    latency, for a feature whose whole job is to be the very first thing a user sees."""
+
+    def in_org(n: GraphNode) -> bool:
+        return org_id is None or n.props.get("org_id") == org_id
+
+    callers: dict[str, set[str]] = {}
+    for edges in store.out.values():
+        for e in edges:
+            if e.type not in ("CALLS", "INHERITS"):
+                continue
+            if e.to_id not in store.nodes or e.from_id not in store.nodes:
+                continue
+            target = store.nodes[e.to_id]
+            if target.label not in ("Function", "Class") or not in_org(target):
+                continue
+            callers.setdefault(e.to_id, set()).add(e.from_id)
+
+    ranked = sorted(callers.items(), key=lambda pair: len(pair[1]), reverse=True)[:top]
+    return {
+        "suggestions": [{**_node(store.nodes[nid]), "dependent_count": len(callset)} for nid, callset in ranked]
+    }

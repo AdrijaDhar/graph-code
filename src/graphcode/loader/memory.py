@@ -131,3 +131,38 @@ class MemoryStore:
             if best is None or rank < best:
                 best, best_node = rank, n
         return best_node
+
+    def search(self, query: str, org_id: str | None = None, limit: int = 15) -> list[GraphNode]:
+        """Multi-result counterpart to find() for autocomplete — same match-quality
+        ranking (exact > dotted-suffix > path-suffix > substring, Variable
+        deprioritized), but returns the top `limit` candidates instead of just one.
+        Built specifically so a user can pick a real, existing symbol from a list
+        instead of blind-typing an exact name and hoping it resolves to the thing
+        they meant — the whole reason find()'s ranking bug (see its own docstring)
+        was possible to hit in the first place. Case-insensitive substring match, so
+        "parse" finds "parse_config" without needing the exact case or full name."""
+        if not query:
+            return []
+        q = query.lower()
+        scored: list[tuple[tuple[int, int], GraphNode]] = []
+        for n in self.nodes.values():
+            if org_id is not None and n.props.get("org_id") != org_id:
+                continue
+            if n.label not in ("Function", "Class", "Module"):
+                continue
+            qn = n.props.get("qualified_name", "")
+            path = n.props.get("path", "")
+            qn_l, path_l = qn.lower(), path.lower()
+            if qn_l == q or path_l == q:
+                score = 0
+            elif qn_l.endswith("." + q):
+                score = 1
+            elif path_l.endswith(q):
+                score = 2
+            elif q in qn_l or q in path_l:
+                score = 3
+            else:
+                continue
+            scored.append(((score, len(qn)), n))
+        scored.sort(key=lambda pair: pair[0])
+        return [n for _, n in scored[:limit]]

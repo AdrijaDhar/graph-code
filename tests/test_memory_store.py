@@ -127,3 +127,49 @@ def test_find_exact_qualified_name_beats_substring_match():
     found = store.find("normalize")
     assert found is not None
     assert found.id == "b"
+
+
+def test_search_is_case_insensitive_substring_match_ranked_by_specificity():
+    store = MemoryStore()
+    store.load_batch(
+        GraphBatch(
+            nodes=[
+                GraphNode(id="a", label="Function", props={"path": "x.py", "qualified_name": "x.normalize_scores"}),
+                GraphNode(id="b", label="Function", props={"path": "y.py", "qualified_name": "y.normalize"}),
+                GraphNode(id="c", label="Function", props={"path": "z.py", "qualified_name": "z.unrelated"}),
+            ]
+        )
+    )
+    results = store.search("Normalize")
+    ids = [n.id for n in results]
+    assert "c" not in ids
+    assert set(ids) == {"a", "b"}
+    # exact suffix match ("y.normalize" ends in ".normalize") should rank above the
+    # looser substring match ("x.normalize_scores" merely contains "normalize")
+    assert ids[0] == "b"
+
+
+def test_search_returns_multiple_results_up_to_limit():
+    store = MemoryStore()
+    store.load_batch(
+        GraphBatch(
+            nodes=[
+                GraphNode(id=f"f{i}", label="Function", props={"path": f"m{i}.py", "qualified_name": f"m{i}.test_thing"})
+                for i in range(5)
+            ]
+        )
+    )
+    results = store.search("test", limit=3)
+    assert len(results) == 3
+
+
+def test_search_scoped_by_org_id():
+    store = MemoryStore()
+    store.load_batch(
+        GraphBatch(nodes=[GraphNode(id="a", label="Function", props={"qualified_name": "x.target"})]), org_id="org1"
+    )
+    store.load_batch(
+        GraphBatch(nodes=[GraphNode(id="b", label="Function", props={"qualified_name": "y.target"})]), org_id="org2"
+    )
+    results = store.search("target", org_id="org1")
+    assert [n.id for n in results] == ["a"]

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from graphcode.indexer import IndexService
 from graphcode.queries.call_chain import call_chain
-from graphcode.queries.paths import blast_radius, shortest_path
+from graphcode.queries.paths import blast_radius, graph_overview, shortest_path, suggest_starting_points
 
 ROOT = Path(__file__).parent / "fixtures" / "mini_repo"
 
@@ -64,3 +64,105 @@ def test_blast_radius_nodes_carry_from_field_for_edge_reconstruction(tmp_path):
         assert "from" in n
         # the 'from' id must point at some other node actually present in the result
         assert n["from"] in {x["id"] for x in nodes}
+
+
+def test_graph_overview_returns_module_level_nodes_and_edges(tmp_path):
+    svc = IndexService(rocks_path=tmp_path / "rocks")
+    svc.index_repo(ROOT, parallel=False)
+    result = graph_overview(svc.memory)
+    assert result["nodes"], "expected at least one module in the fixture"
+    assert all(n["label"] == "Module" for n in result["nodes"])
+    # every edge must reference nodes actually present in the result, not dangling ids
+    node_ids = {n["id"] for n in result["nodes"]}
+    for e in result["edges"]:
+        assert e["source"] in node_ids
+        assert e["target"] in node_ids
+    assert result["truncated"] is False
+
+
+def test_graph_overview_size_reflects_contained_symbol_count(tmp_path):
+    """`size` is used for node sizing in the frontend visualization — a module with
+    more functions/classes should report a larger size than an empty one."""
+    svc = IndexService(rocks_path=tmp_path / "rocks")
+    svc.index_repo(ROOT, parallel=False)
+    result = graph_overview(svc.memory)
+    by_path = {n["path"]: n["size"] for n in result["nodes"] if "path" in n}
+    utils = by_path.get("src/utils.py")
+    assert utils is not None and utils > 0
+
+
+def test_graph_overview_truncates_and_flags_when_over_max_nodes(tmp_path):
+    svc = IndexService(rocks_path=tmp_path / "rocks")
+    svc.index_repo(ROOT, parallel=False)
+    result = graph_overview(svc.memory, max_nodes=1)
+    assert len(result["nodes"]) == 1
+    assert result["truncated"] is True
+
+
+def test_graph_overview_scoped_by_org_id(tmp_path):
+    from graphcode.loader.memory import MemoryStore
+    from graphcode.schema import GraphBatch, GraphNode
+
+    store = MemoryStore()
+    store.load_batch(
+        GraphBatch(nodes=[GraphNode(id="m1", label="Module", props={"path": "a.py"})]), org_id="org1"
+    )
+    store.load_batch(
+        GraphBatch(nodes=[GraphNode(id="m2", label="Module", props={"path": "b.py"})]), org_id="org2"
+    )
+    result = graph_overview(store, org_id="org1")
+    assert {n["id"] for n in result["nodes"]} == {"m1"}
+
+
+def test_suggest_starting_points_ranks_by_real_dependent_count(tmp_path):
+    svc = IndexService(rocks_path=tmp_path / "rocks")
+    svc.index_repo(ROOT, parallel=False)
+    result = suggest_starting_points(svc.memory)
+    assert result["suggestions"], "expected at least one suggestion in the fixture"
+    # results must be sorted descending by dependent_count, and every one must be a
+    # real function/class (not a Module or Variable — this ranks "what's relied on
+    # behaviorally", not files)
+    counts = [s["dependent_count"] for s in result["suggestions"]]
+    assert counts == sorted(counts, reverse=True)
+    assert all(s["label"] in ("Function", "Class") for s in result["suggestions"])
+    assert all(s["dependent_count"] >= 1 for s in result["suggestions"])
+
+
+def test_suggest_starting_points_counts_distinct_callers_not_call_sites():
+    from graphcode.loader.memory import MemoryStore
+    from graphcode.schema import GraphBatch, GraphEdge, GraphNode
+
+    store = MemoryStore()
+    store.load_batch(
+        GraphBatch(
+            nodes=[
+                GraphNode(id="target", label="Function", props={"name": "target"}),
+                GraphNode(id="caller", label="Function", props={"name": "caller"}),
+            ],
+            # two CALLS edges from the *same* caller must count as one dependent, not two
+            edges=[GraphEdge(type="CALLS", from_id="caller", to_id="target")] * 2,
+        )
+    )
+    result = suggest_starting_points(store)
+    hit = next(s for s in result["suggestions"] if s["id"] == "target")
+    assert hit["dependent_count"] == 1
+
+
+def test_suggest_starting_points_scoped_by_org_id():
+    from graphcode.loader.memory import MemoryStore
+    from graphcode.schema import GraphBatch, GraphEdge, GraphNode
+
+    store = MemoryStore()
+    store.load_batch(
+        GraphBatch(
+            nodes=[
+                GraphNode(id="t1", label="Function", props={"name": "t1"}),
+                GraphNode(id="c1", label="Function", props={"name": "c1"}),
+            ],
+            edges=[GraphEdge(type="CALLS", from_id="c1", to_id="t1")],
+        ),
+        org_id="org1",
+    )
+    store.load_batch(GraphBatch(nodes=[GraphNode(id="t2", label="Function", props={"name": "t2"})]), org_id="org2")
+    result = suggest_starting_points(store, org_id="org2")
+    assert result["suggestions"] == []

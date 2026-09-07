@@ -64,6 +64,13 @@ export default function Team() {
 
       <Card>
         <SectionHeading>Invite a member</SectionHeading>
+        <Muted className="mb-3 text-xs">
+          Note: this creates a placeholder membership immediately — it does not send a
+          real invite, and isn't linked to that person's actual GitHub account until
+          they separately sign in with GitHub themselves (which creates a
+          <em> different</em>, unconnected member row today, not a merge into this
+          one). Treat this as a roster placeholder, not a working invite flow yet.
+        </Muted>
         <form onSubmit={invite} className="flex items-center gap-2">
           <Input className="mr-0" value={login} onChange={(e) => setLogin(e.target.value)} placeholder="GitHub username" disabled={busy} />
           <Button type="submit" disabled={busy} className="flex items-center gap-2">

@@ -1,3 +1,5 @@
+"use client";
+import { useEffect, useState } from "react";
 import { Button, Card, Muted, PageHeading } from "./components/ui";
 import { GitHubIcon, GitBranchIcon, NetworkIcon, SearchIcon, ShieldIcon, SparkleIcon } from "./components/Icon";
 
@@ -5,12 +7,23 @@ const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const FEATURES = [
   { icon: <GitBranchIcon />, text: "Polyglot: Python, TS/JS, Go, Java, Rust, C/C++" },
-  { icon: <NetworkIcon />, text: "Dual store: Memgraph + RocksDB snapshots and vectors" },
+  { icon: <NetworkIcon />, text: "In-process graph with RocksDB persistence (optional Memgraph for Cypher)" },
   { icon: <SearchIcon />, text: "Live file watcher and MiniLM semantic search" },
-  { icon: <ShieldIcon />, text: "Teams, API keys, usage quotas (Stripe test mode)" },
+  { icon: <ShieldIcon />, text: "Teams, API keys, usage quotas, PR bot, VS Code extension" },
 ];
 
 export default function Home() {
+  // Signed-in or not, this page used to show the same "Sign in with GitHub" button
+  // regardless — confirmed live: a signed-in user clicking the logo (which links
+  // here) saw what looked like a logged-out state, when nothing had actually changed.
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch(`${API}/v1/me`, { credentials: "include" })
+      .then((r) => setSignedIn(r.ok))
+      .catch(() => setSignedIn(false));
+  }, []);
+
   return (
     <div>
       <div className="inline-flex items-center gap-1.5 text-xs font-medium text-[#8ab4ff] bg-[#3b7bf6]/10 border border-[#3b7bf6]/20 rounded-full px-3 py-1 mb-4">
@@ -28,12 +41,21 @@ export default function Home() {
       </p>
 
       <Card>
-        <a href={`${API}/v1/auth/github`}>
-          <Button className="flex items-center gap-2">
-            <GitHubIcon />
-            Sign in with GitHub
-          </Button>
-        </a>
+        {signedIn ? (
+          <a href="/app">
+            <Button className="flex items-center gap-2">
+              <GitBranchIcon />
+              Go to dashboard
+            </Button>
+          </a>
+        ) : (
+          <a href={`${API}/v1/auth/github`}>
+            <Button className="flex items-center gap-2">
+              <GitHubIcon />
+              Sign in with GitHub
+            </Button>
+          </a>
+        )}
         <ul className="mt-5 space-y-3">
           {FEATURES.map((f, i) => (
             <li key={i} className="flex items-center gap-2.5 text-sm text-[#e8eefc]/75">

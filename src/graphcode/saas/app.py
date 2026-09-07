@@ -16,8 +16,9 @@ from graphcode.context.compiler import compile_context, slice_source
 from graphcode.context.pipeline import build_context
 from graphcode.indexer import get_index_service
 from graphcode.queries.call_chain import call_chain
+from graphcode.queries.copilot import ask as copilot_ask
 from graphcode.queries.hybrid import semantic_search
-from graphcode.queries.paths import blast_radius, shortest_path
+from graphcode.queries.paths import blast_radius, graph_overview, shortest_path, suggest_starting_points
 from graphcode.queries.test_impact import find_affected_tests
 from graphcode.saas.admin import admin_overview, is_admin
 from graphcode.saas.auth import (
@@ -265,6 +266,18 @@ def auth_callback(request: Request, code: str = "", state: str = ""):
     return resp
 
 
+@app.get("/v1/auth/logout")
+def auth_logout():
+    """There was no sign-out path anywhere in the app — confirmed live: a user with a
+    real session had no way to end it short of manually clearing cookies, and the
+    logo link goes to `/`, a public landing page that isn't auth-aware and shows a
+    sign-in prompt regardless of session state, easy to mistake for "you got logged
+    out" when nothing actually changed."""
+    resp = RedirectResponse(url=f"{settings.frontend_url}/")
+    resp.delete_cookie("gc_session")
+    return resp
+
+
 @app.get(" /v1/me".replace(" ", ""))
 def me(ctx=Depends(require_user)):
     user, org = ctx
@@ -272,6 +285,14 @@ def me(ctx=Depends(require_user)):
         "user": {"id": user.id, "login": user.login, "github_id": user.github_id},
         "org": {"id": org.id, "name": org.name, "plan": org.plan},
         "usage": remaining(org.id, org.plan),
+        # True whenever this deployment has no GitHub OAuth configured — every request
+        # resolves to the same shared demo account regardless of cookies (see
+        # _user_from_request's demo fallback), so there is no real session for "Sign
+        # out" to end: it clears a cookie that was never required, then the very next
+        # request falls right back into the same demo account. The frontend uses this
+        # to show "Demo mode" instead of a Sign out link that would look broken —
+        # confirmed live as the actual cause of a "sign out does nothing" report.
+        "demo": not bool(settings.github_client_id),
     }
 
 
@@ -392,6 +413,61 @@ def q_blast(symbol: str, direction: str = "upstream", ctx=Depends(require_user))
     t0 = time.time()
     out = blast_radius(get_index_service().memory, symbol, direction=direction, org_id=str(org.id))
     record_usage(org.id, "query.blast", latency_ms=int((time.time() - t0) * 1000))
+    return out
+
+
+@app.get("/v1/graph/overview")
+def q_graph_overview(ctx=Depends(require_user)):
+    """File-level dependency map of the currently active repo — every module plus the
+    imports between them, sized by contained function/class count. Not gated by the
+    per-query quota like the symbol-specific queries below: it's one call per repo
+    load, not something a user runs repeatedly."""
+    _, org = ctx
+    t0 = time.time()
+    out = graph_overview(get_index_service().memory, org_id=str(org.id))
+    record_usage(org.id, "query.graph_overview", latency_ms=int((time.time() - t0) * 1000))
+    return out
+
+
+@app.get("/v1/graph/suggestions")
+def q_graph_suggestions(ctx=Depends(require_user)):
+    """"Where do I even start?" — the real gap query autocomplete alone doesn't
+    close: autocomplete helps once you know roughly what you're looking for, but a
+    user who just indexed an unfamiliar repo doesn't have a name in mind yet. Ranks
+    real functions/classes by dependency in-degree (graph centrality, not an LLM
+    call) so the most relied-upon parts of the codebase are the first thing shown."""
+    _, org = ctx
+    t0 = time.time()
+    out = suggest_starting_points(get_index_service().memory, org_id=str(org.id))
+    record_usage(org.id, "query.graph_suggestions", latency_ms=int((time.time() - t0) * 1000))
+    return out
+
+
+@app.get("/v1/symbols/search")
+def q_symbol_search(q: str, ctx=Depends(require_user)):
+    """Autocomplete for the query forms — lets a user pick a real, existing symbol
+    from a live-searched list instead of blind-typing an exact name and hoping it
+    resolves to the thing they meant."""
+    _, org = ctx
+    results = get_index_service().memory.search(q, org_id=str(org.id))
+    return {"results": [{"id": n.id, "label": n.label, **n.props} for n in results]}
+
+
+@app.get("/v1/ask")
+def q_ask(text: str, ctx=Depends(require_user)):
+    """The natural-language front door: "what breaks if I change X" instead of
+    picking a query type and typing an exact symbol name. Classifies the question via
+    the same trained sentence-transformer already used for semantic code search (real
+    embedding similarity, not keyword rules — see queries/copilot.py), resolves the
+    real symbol(s) it's about, runs the one query that actually answers it, and
+    returns a phrased sentence plus the underlying data for the detailed view."""
+    _, org = ctx
+    ok, msg = check_quota(org.id, org.plan, "query")
+    if not ok:
+        raise HTTPException(429, msg)
+    t0 = time.time()
+    out = copilot_ask(get_index_service(), text, org_id=str(org.id))
+    record_usage(org.id, "query.ask", latency_ms=int((time.time() - t0) * 1000))
     return out
 
 

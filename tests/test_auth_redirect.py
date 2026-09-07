@@ -113,3 +113,18 @@ def test_session_cookie_uses_samesite_lax_over_plain_http():
     kwargs = app_module.session_cookie_kwargs(https_deployment=False)
     assert kwargs["secure"] is False
     assert kwargs["samesite"] == "lax"
+
+
+def test_logout_clears_session_cookie_and_redirects():
+    """Regression test: there was previously no sign-out path anywhere in the app at
+    all — confirmed live, a real user with a real session had no way to end it short
+    of manually clearing cookies in devtools."""
+    monkeypatch_settings = settings.frontend_url
+    resp = client.get("/v1/auth/logout", follow_redirects=False)
+    assert resp.status_code in (302, 307)
+    assert resp.headers["location"] == f"{monkeypatch_settings}/"
+    set_cookie = resp.headers.get("set-cookie", "")
+    assert "gc_session=" in set_cookie
+    # A cleared cookie is set with an empty value and an expiry in the past —
+    # confirming this actually clears it, not just redirects without doing anything.
+    assert 'gc_session=""' in set_cookie or "gc_session=;" in set_cookie
