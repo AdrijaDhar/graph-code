@@ -159,8 +159,9 @@ edges, transitively through helpers — not by filename convention), so the comm
 tells you what to run, not just what might break.
 
 **No deployment, ever.** It's a workflow file that runs entirely on GitHub's own CI
-infrastructure — not a server you or anyone else hosts. Two ways to add it, easiest
-first:
+infrastructure — not a server you or anyone else hosts. Listed on the
+[GitHub Marketplace](https://github.com/marketplace/actions/graph-code-blast-radius)
+— find it by name, or add it directly. Two ways to add it, easiest first:
 
 **As a reusable action** (`action.yml`, at the root of this repo) — paste this into
 `.github/workflows/pr-blast-radius.yml` in *any* repo, yours or anyone else's:
@@ -180,7 +181,7 @@ jobs:
         with:
           fetch-depth: 0   # needed: diffs against origin/<base> by name, and blast
                             # radius needs real repo structure, not a shallow clone
-      - uses: AdrijaDhar/graph-code@main
+      - uses: AdrijaDhar/graph-code@v1
 ```
 
 That's the whole thing — Python setup, installing `graphcode`, and the `pr-comment
