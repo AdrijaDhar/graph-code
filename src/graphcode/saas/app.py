@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import secrets
 import time
 from pathlib import Path
@@ -40,6 +41,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def session_cookie_kwargs(https_deployment: bool) -> dict:
+    """The frontend and backend are deployed on *different* subdomains in production
+    (e.g. graph-code-web.onrender.com vs graph-code-api.onrender.com) and the frontend
+    calls the API with `credentials: "include"` — a plain SameSite=Lax cookie (the
+    default) is not sent on that kind of cross-site fetch, only on top-level page
+    navigations. SameSite=None is required for it to actually arrive, and browsers
+    reject SameSite=None cookies outright unless Secure is also set. Only enable this
+    when actually serving over HTTPS — SameSite=None without HTTPS breaks local dev
+    instead of fixing anything, since a Secure cookie is never sent back over plain
+    http://localhost."""
+    return {
+        "httponly": True,
+        "secure": https_deployment,
+        "samesite": "none" if https_deployment else "lax",
+    }
+
+
+_SESSION_COOKIE_KWARGS = session_cookie_kwargs(settings.public_base_url.startswith("https://"))
 
 
 @app.on_event("startup")
@@ -90,9 +110,16 @@ def _user_from_request(request: Request, authorization: str | None) -> tuple[Use
                     mem = s.query(Membership).filter_by(user_id=user.id).first()
                     org = s.get(Org, mem.org_id) if mem else None
                     return user, org
-        # local demo user
-        user, org = upsert_github_user("0", "demo", "Demo User")
-        return user, org
+        # Local demo user — but ONLY when OAuth genuinely isn't configured (matches
+        # auth_github()'s own local-dev fallback). Confirmed live as a real bug: with
+        # OAuth configured (any real deployment), this used to fall back to the SAME
+        # shared demo account for *any* unauthenticated request regardless — meaning
+        # two different strangers who both skip signing in on a live deployment would
+        # silently land in the identical org and see each other's indexed repos.
+        if not settings.github_client_id:
+            user, org = upsert_github_user("0", "demo", "Demo User")
+            return user, org
+        return None, None
     finally:
         s.close()
 
@@ -167,17 +194,24 @@ def home():
 
 
 @app.get("/view/blast", response_class=HTMLResponse)
-def view_blast(symbol: str = "parse_config"):
-    data = blast_radius(get_index_service().memory, symbol, direction="upstream")
+def view_blast(symbol: str = "parse_config", ctx=Depends(require_user)):
+    # Was fully unauthenticated and queried the shared MemoryStore with no org_id at
+    # all — on a real deployment with more than one org's data hydrated, anyone (no
+    # login needed) could pull another org's blast-radius data just by guessing a
+    # symbol name. Also had a reflected-XSS gap: `symbol` and the graph's own
+    # name/path/label strings went straight into the HTML response unescaped.
+    _, org = ctx
+    data = blast_radius(get_index_service().memory, symbol, direction="upstream", org_id=str(org.id))
     origin = data.get("origin") or {}
     rows = []
     for n in data.get("nodes") or []:
-        name = n.get("qualified_name") or n.get("path") or n.get("name")
-        via = n.get("via") or "origin"
-        rows.append(f"<li><b>{n.get('label')}</b> — {name} <span class='muted'>({via})</span></li>")
+        name = html.escape(str(n.get("qualified_name") or n.get("path") or n.get("name") or ""))
+        via = html.escape(str(n.get("via") or "origin"))
+        label = html.escape(str(n.get("label") or ""))
+        rows.append(f"<li><b>{label}</b> — {name} <span class='muted'>({via})</span></li>")
     err = data.get("error")
-    body = f"<p><b>Error:</b> {err}</p>" if err else f"<ul>{''.join(rows)}</ul>"
-    title = origin.get("qualified_name") or symbol
+    body = f"<p><b>Error:</b> {html.escape(str(err))}</p>" if err else f"<ul>{''.join(rows)}</ul>"
+    title = html.escape(str(origin.get("qualified_name") or symbol))
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"/><title>Blast radius</title>
 <style>
@@ -198,20 +232,36 @@ def auth_github():
     if not settings.github_client_id:
         user, org = upsert_github_user("0", "demo", "Demo User")
         resp = RedirectResponse(url=f"{settings.frontend_url}/app")
-        resp.set_cookie("gc_session", sign_session(f"u:{user.id}"), httponly=True)
+        resp.set_cookie("gc_session", sign_session(f"u:{user.id}"), **_SESSION_COOKIE_KWARGS)
         return resp
+    # state is stored in a short-lived cookie and re-checked in the callback below —
+    # without this, a login-CSRF is possible: an attacker starts their own OAuth flow,
+    # gets a valid `code` for their own account, and sends a victim a link straight to
+    # the callback with that code. The callback would exchange it, authenticate as the
+    # attacker's identity, and set the *victim's* browser session to it — tricking the
+    # victim into unknowingly using the attacker's account (and everything they do
+    # there being visible to the attacker afterward). The random, per-attempt state
+    # value breaks this: the attacker can't predict what state the victim's browser
+    # cookie will hold, so a code+state pair generated for the attacker's own flow
+    # won't match.
     state = secrets.token_urlsafe(16)
-    return RedirectResponse(github_login_url(state))
+    resp = RedirectResponse(github_login_url(state))
+    resp.set_cookie("oauth_state", state, httponly=True, max_age=600, samesite="lax")
+    return resp
 
 
 @app.get("/v1/auth/github/callback")
-def auth_callback(code: str = "", state: str = ""):
+def auth_callback(request: Request, code: str = "", state: str = ""):
+    expected_state = request.cookies.get("oauth_state")
+    if not expected_state or not secrets.compare_digest(state, expected_state):
+        raise HTTPException(400, "invalid oauth state")
     info = exchange_github_code(code)
     if not info:
         raise HTTPException(400, "oauth failed")
     user, org = upsert_github_user(str(info.get("id")), info.get("login") or "user", info.get("name") or "")
     resp = RedirectResponse(url=f"{settings.frontend_url}/app")
-    resp.set_cookie("gc_session", sign_session(f"u:{user.id}"), httponly=True)
+    resp.set_cookie("gc_session", sign_session(f"u:{user.id}"), **_SESSION_COOKIE_KWARGS)
+    resp.delete_cookie("oauth_state")
     return resp
 
 
