@@ -1,5 +1,8 @@
 # Graph-Code Copilot
 
+**[Try the live demo →](https://graph-code-web.onrender.com)** (sign in with GitHub —
+free-tier hosting, first request after idle takes ~30s to wake up)
+
 Parse a repository with Tree-sitter into a real structural graph (functions, classes,
 imports, calls) and answer the question text search and plain RAG can't: **"what
 breaks if I change this?"** — plus shortest path, call chains, and hybrid semantic
@@ -247,6 +250,10 @@ exercise it, traced through the real call graph, not filename guessing — or re
 result is a jump-to-location QuickPick.
 
 ## 5. Hosted web app
+
+**Live**: [graph-code-web.onrender.com](https://graph-code-web.onrender.com) — sign in
+with GitHub and try it against a real repo. Free-tier hosting, so the first request
+after a quiet period takes ~30s to wake up; after that it's normal speed.
 
 The one path that's an actual infrastructure commitment — you're standing up a public
 URL, not just running something locally.
