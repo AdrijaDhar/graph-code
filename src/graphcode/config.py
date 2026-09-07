@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     session_secret: str = "graphcode-dev-secret-change-me"
     cors_origins: str = "http://localhost:3000"
     public_base_url: str = "http://localhost:8000"
+    # Off by default: a fresh clone has no data/models/reranker.joblib (see
+    # queries/learned_rerank.py::get_default_reranker) until eval/train_reranker.py is
+    # run, and this is a research result with real, honestly-reported per-repo
+    # trade-offs (eval/results/reranker.md), not something that should silently change
+    # every query's behavior without an explicit opt-in.
+    enable_learned_rerank: bool = False
 
     @property
     def admin_ids(self) -> set[str]:

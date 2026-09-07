@@ -1,0 +1,8 @@
+node_modules/
+out/
+*.vsix
+# Exception: ship the packaged extension directly so `git clone` + the README's
+# install command works with no build step — it's ~7KB, small enough that "don't
+# commit build artifacts" isn't worth the extra friction here. Rebuild with
+# `npm install && npm run compile && npx @vscode/vsce package` after any src/ change.
+!graph-code-0.1.0.vsix

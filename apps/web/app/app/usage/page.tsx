@@ -1,37 +1,16 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Button, Card, Muted, PageHeading, SectionHeading, Skeleton } from "../../components/ui";
+import { ChartIcon } from "../../components/Icon";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-const card: React.CSSProperties = {
-  border: "1px solid #243",
-  borderRadius: 8,
-  padding: 16,
-  marginTop: 16,
-  background: "#0f1830",
-};
-const button: React.CSSProperties = {
-  background: "#2d6cdf",
-  border: "none",
-  borderRadius: 6,
-  color: "white",
-  padding: "8px 14px",
-  cursor: "pointer",
-};
-const barTrack: React.CSSProperties = {
-  background: "#0b1020",
-  borderRadius: 6,
-  height: 10,
-  overflow: "hidden",
-  marginTop: 6,
-};
-
 function Bar({ used, limit }: { used: number; limit: number }) {
   const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
-  const color = pct > 90 ? "#e5484d" : pct > 70 ? "#f5a623" : "#2d6cdf";
+  const color = pct > 90 ? "bg-red-500" : pct > 70 ? "bg-amber-500" : "bg-gradient-to-r from-[#3b7bf6] to-[#7b3bf6]";
   return (
-    <div style={barTrack}>
-      <div style={{ width: `${pct}%`, height: "100%", background: color }} />
+    <div className="bg-black/25 rounded-full h-2 overflow-hidden mt-2">
+      <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -58,35 +37,41 @@ export default function Usage() {
 
   return (
     <div>
-      <h1>Usage</h1>
-      <div style={card}>
-        <p style={{ marginTop: 0, opacity: 0.7 }}>Plan: {u?.plan || "…"}</p>
+      <PageHeading icon={<ChartIcon className="w-5 h-5" />}>Usage</PageHeading>
+      <Card>
+        {u === null ? (
+          <Skeleton className="h-28 w-full" />
+        ) : (
+          <>
+            <Muted className="mb-5">Plan: <span className="text-white font-medium">{u.plan}</span></Muted>
 
-        <div style={{ marginBottom: 16 }}>
-          <div>
-            Queries today: {u?.queries_used ?? "…"} / {u?.queries_limit ?? "…"}
-          </div>
-          {u && <Bar used={u.queries_used} limit={u.queries_limit} />}
-        </div>
+            <div className="mb-5">
+              <div className="flex justify-between text-sm text-[#e8eefc]/80">
+                <span>Queries today</span>
+                <span className="tabular-nums">{u.queries_used} / {u.queries_limit}</span>
+              </div>
+              <Bar used={u.queries_used} limit={u.queries_limit} />
+            </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <div>
-            Indexes today: {u?.indexes_used ?? "…"} / {u?.indexes_limit ?? "…"}
-          </div>
-          {u && <Bar used={u.indexes_used} limit={u.indexes_limit} />}
-        </div>
+            <div className="mb-2">
+              <div className="flex justify-between text-sm text-[#e8eefc]/80">
+                <span>Indexes today</span>
+                <span className="tabular-nums">{u.indexes_used} / {u.indexes_limit}</span>
+              </div>
+              <Bar used={u.indexes_used} limit={u.indexes_limit} />
+            </div>
 
-        <div style={{ opacity: 0.7 }}>Repo limit: {u?.repos_limit ?? "…"}</div>
-      </div>
+            <Muted className="mt-4">Repo limit: {u.repos_limit}</Muted>
+          </>
+        )}
+      </Card>
 
-      <div style={card}>
-        <h2 style={{ marginTop: 0 }}>Plan</h2>
-        <p style={{ opacity: 0.7, marginTop: 0 }}>Stripe test mode — no live charges possible.</p>
-        <button style={button} onClick={upgrade}>
-          Upgrade to Pro
-        </button>
-        {status && <p style={{ opacity: 0.8 }}>{status}</p>}
-      </div>
+      <Card>
+        <SectionHeading>Plan</SectionHeading>
+        <Muted className="mb-4">Stripe test mode — no live charges possible.</Muted>
+        <Button onClick={upgrade}>Upgrade to Pro</Button>
+        {status && <Muted className="mt-3">{status}</Muted>}
+      </Card>
     </div>
   );
 }

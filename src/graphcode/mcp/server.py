@@ -21,6 +21,14 @@ def _svc():
     return get_index_service()
 
 
+def _learned_reranker():
+    if not settings.enable_learned_rerank:
+        return None
+    from graphcode.queries.learned_rerank import get_default_reranker
+
+    return get_default_reranker()
+
+
 def _semantic_hits_for(svc, prompt: str, files: list[str] | None, symbols: list[str] | None):
     query_text = prompt or next(iter((symbols or []) + (files or [])), "")
     if not query_text:
@@ -45,19 +53,23 @@ def graph_status() -> str:
 @mcp.tool()
 def graph_shortest_path(from_symbol: str, to_symbol: str, max_hops: int = 10) -> str:
     """Shortest dependency path between two symbols or files."""
-    return json.dumps(shortest_path(_svc().memory, from_symbol, to_symbol, max_hops=max_hops), indent=2)
+    return json.dumps(
+        shortest_path(_svc().memory, from_symbol, to_symbol, max_hops=max_hops, org_id="local"), indent=2
+    )
 
 
 @mcp.tool()
 def graph_call_chain(symbol: str, max_depth: int = 5) -> str:
     """Downstream CALLS expansion from a function or file."""
-    return json.dumps(call_chain(_svc().memory, symbol, max_depth=max_depth), indent=2)
+    return json.dumps(call_chain(_svc().memory, symbol, max_depth=max_depth, org_id="local"), indent=2)
 
 
 @mcp.tool()
 def graph_blast_radius(symbol_or_file: str, direction: str = "upstream") -> str:
     """Upstream importers/callees or downstream dependencies."""
-    return json.dumps(blast_radius(_svc().memory, symbol_or_file, direction=direction), indent=2)
+    return json.dumps(
+        blast_radius(_svc().memory, symbol_or_file, direction=direction, org_id="local"), indent=2
+    )
 
 
 @mcp.tool()
@@ -79,6 +91,8 @@ def graph_compile_context(
         prompt=prompt,
         max_tokens=max_tokens or settings.max_context_tokens,
         semantic_hits=semantic_hits,
+        org_id="local",
+        learned_reranker=_learned_reranker(),
     )
 
 
@@ -106,6 +120,8 @@ def graph_get_context(
         prompt=prompt or "",
         max_tokens=token_budget or settings.max_context_tokens,
         semantic_hits=semantic_hits,
+        org_id="local",
+        learned_reranker=_learned_reranker(),
     )
     return bundle.rendered_prompt
 

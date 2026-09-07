@@ -1,0 +1,79 @@
+{
+  "name": "graph-code",
+  "displayName": "Graph-Code",
+  "description": "Blast radius, shortest path, and semantic search over your codebase's real call/import graph — not text search.",
+  "version": "0.1.0",
+  "publisher": "adrijadhar",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AdrijaDhar/graph-code"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other", "Programming Languages"],
+  "keywords": ["blast radius", "call graph", "dependency graph", "code intelligence", "semantic search"],
+  "activationEvents": [
+    "workspaceContains:**/*.py",
+    "workspaceContains:**/*.ts",
+    "workspaceContains:**/*.js",
+    "workspaceContains:**/*.go",
+    "workspaceContains:**/*.java",
+    "workspaceContains:**/*.rs"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "graphcode.indexWorkspace",
+        "title": "Graph-Code: Index Workspace"
+      },
+      {
+        "command": "graphcode.blastRadiusAtCursor",
+        "title": "Graph-Code: Blast Radius for Symbol at Cursor"
+      },
+      {
+        "command": "graphcode.blastRadiusPrompt",
+        "title": "Graph-Code: Blast Radius for Symbol..."
+      },
+      {
+        "command": "graphcode.semanticSearch",
+        "title": "Graph-Code: Semantic Search"
+      },
+      {
+        "command": "graphcode.shortestPath",
+        "title": "Graph-Code: Shortest Path Between Two Symbols"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "graphcode.blastRadiusAtCursor",
+          "group": "navigation",
+          "when": "editorHasSelection || editorTextFocus"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Graph-Code",
+      "properties": {
+        "graphcode.command": {
+          "type": "string",
+          "default": "graphcode",
+          "description": "Path to the graphcode CLI (installed via `pip install -e .` or `pip install graph-code-copilot` in the environment this points at). Defaults to relying on PATH."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}

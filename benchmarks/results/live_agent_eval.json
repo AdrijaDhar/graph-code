@@ -1,0 +1,277 @@
+[
+  {
+    "task": "rename_function",
+    "condition": "graph",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 8,
+    "tool_calls": [
+      "graph_compile_context",
+      "graph_semantic_search",
+      "graph_compile_context",
+      "graph_semantic_search",
+      "graph_semantic_search",
+      "graph_read_file",
+      "graph_read_file",
+      "graph_semantic_search"
+    ],
+    "changed_files": [],
+    "latency_s": 108.67
+  },
+  {
+    "task": "rename_function",
+    "condition": "baseline_toolagent",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 6,
+    "tool_calls": [
+      "list_files",
+      "read_file",
+      "grep",
+      "read_file",
+      "grep",
+      "read_file"
+    ],
+    "changed_files": [
+      "utils/format.py",
+      "api/handlers.py"
+    ],
+    "latency_s": 24.65
+  },
+  {
+    "task": "add_required_param",
+    "condition": "graph",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 5,
+    "tool_calls": [
+      "graph_compile_context",
+      "graph_semantic_search",
+      "graph_read_file",
+      "graph_semantic_search",
+      "graph_read_file"
+    ],
+    "changed_files": [
+      "db/connection.py",
+      "services/query.py"
+    ],
+    "latency_s": 97.1
+  },
+  {
+    "task": "add_required_param",
+    "condition": "baseline_toolagent",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 6,
+    "tool_calls": [
+      "list_files",
+      "list_files",
+      "read_file",
+      "grep",
+      "read_file",
+      "grep"
+    ],
+    "changed_files": [
+      "db/connection.py",
+      "services/query.py"
+    ],
+    "latency_s": 46.2
+  },
+  {
+    "task": "change_return_type",
+    "condition": "graph",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 5,
+    "tool_calls": [
+      "graph_compile_context",
+      "graph_compile_context",
+      "graph_semantic_search",
+      "graph_read_file",
+      "graph_read_file"
+    ],
+    "changed_files": [
+      "models/user.py",
+      "views/profile.py"
+    ],
+    "latency_s": 67.04
+  },
+  {
+    "task": "change_return_type",
+    "condition": "baseline_toolagent",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 6,
+    "tool_calls": [
+      "list_files",
+      "list_files",
+      "read_file",
+      "grep",
+      "read_file",
+      "grep"
+    ],
+    "changed_files": [
+      "models/user.py",
+      "views/profile.py"
+    ],
+    "latency_s": 35.42
+  },
+  {
+    "task": "remove_default_arg",
+    "condition": "graph",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 6,
+    "tool_calls": [
+      "graph_compile_context",
+      "graph_semantic_search",
+      "graph_compile_context",
+      "graph_semantic_search",
+      "graph_semantic_search",
+      "graph_read_file"
+    ],
+    "changed_files": [
+      "config/settings.py",
+      "bootstrap/init.py"
+    ],
+    "latency_s": 107.15
+  },
+  {
+    "task": "remove_default_arg",
+    "condition": "baseline_toolagent",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 6,
+    "tool_calls": [
+      "list_files",
+      "list_files",
+      "read_file",
+      "grep",
+      "read_file",
+      "grep"
+    ],
+    "changed_files": [
+      "config/settings.py",
+      "bootstrap/init.py"
+    ],
+    "latency_s": 15.54
+  },
+  {
+    "task": "rename_exception",
+    "condition": "graph",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 8,
+    "tool_calls": [
+      "graph_compile_context",
+      "graph_read_file",
+      "graph_semantic_search",
+      "graph_read_file",
+      "graph_semantic_search",
+      "graph_semantic_search",
+      "graph_semantic_search",
+      "graph_read_file"
+    ],
+    "changed_files": [],
+    "latency_s": 158.19
+  },
+  {
+    "task": "rename_exception",
+    "condition": "baseline_toolagent",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 5,
+    "tool_calls": [
+      "list_files",
+      "read_file",
+      "grep",
+      "read_file",
+      "grep"
+    ],
+    "changed_files": [
+      "net/client.py",
+      "handlers/retry.py"
+    ],
+    "latency_s": 6.34
+  },
+  {
+    "task": "rename_shared_constant",
+    "condition": "graph",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 4,
+    "tool_calls": [
+      "graph_compile_context",
+      "graph_read_file",
+      "graph_read_file",
+      "graph_semantic_search"
+    ],
+    "changed_files": [
+      "constants.py",
+      "worker/pool.py"
+    ],
+    "latency_s": 5.91
+  },
+  {
+    "task": "rename_shared_constant",
+    "condition": "baseline_toolagent",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 6,
+    "tool_calls": [
+      "list_files",
+      "list_files",
+      "read_file",
+      "grep",
+      "read_file",
+      "grep"
+    ],
+    "changed_files": [
+      "constants.py",
+      "worker/pool.py"
+    ],
+    "latency_s": 38.57
+  },
+  {
+    "task": "polymorphic_interface_change",
+    "condition": "graph",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 7,
+    "tool_calls": [
+      "graph_compile_context",
+      "graph_read_file",
+      "graph_semantic_search",
+      "graph_semantic_search",
+      "graph_semantic_search",
+      "graph_semantic_search",
+      "graph_read_file"
+    ],
+    "changed_files": [
+      "shapes.py",
+      "circle.py"
+    ],
+    "latency_s": 193.43
+  },
+  {
+    "task": "polymorphic_interface_change",
+    "condition": "baseline_toolagent",
+    "passed": true,
+    "detail": "OK",
+    "tool_call_count": 7,
+    "tool_calls": [
+      "list_files",
+      "list_files",
+      "read_file",
+      "grep",
+      "grep",
+      "read_file",
+      "grep"
+    ],
+    "changed_files": [
+      "shapes.py",
+      "circle.py"
+    ],
+    "latency_s": 17.11
+  }
+]

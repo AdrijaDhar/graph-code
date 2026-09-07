@@ -6,9 +6,11 @@ from graphcode.loader.memory import MemoryStore
 from graphcode.schema import GraphNode
 
 
-def shortest_path(store: MemoryStore, src_key: str, dst_key: str, max_hops: int = 10) -> dict:
-    a = store.find(src_key)
-    b = store.find(dst_key)
+def shortest_path(
+    store: MemoryStore, src_key: str, dst_key: str, max_hops: int = 10, org_id: str | None = None
+) -> dict:
+    a = store.find(src_key, org_id=org_id)
+    b = store.find(dst_key, org_id=org_id)
     if not a or not b:
         return {"path": [], "error": "symbol not found"}
     if a.id == b.id:
@@ -29,6 +31,8 @@ def shortest_path(store: MemoryStore, src_key: str, dst_key: str, max_hops: int 
         for e in list(store.out.get(cur, [])) + list(store.inn.get(cur, [])):
             nxt = e.to_id if e.from_id == cur else e.from_id
             if nxt in seen or nxt not in store.nodes:
+                continue
+            if org_id is not None and store.nodes[nxt].props.get("org_id") != org_id:
                 continue
             seen.add(nxt)
             prev[nxt] = (cur, e.type)
@@ -52,8 +56,10 @@ def shortest_path(store: MemoryStore, src_key: str, dst_key: str, max_hops: int 
     return {"path": steps, "hops": len(steps) - 1}
 
 
-def blast_radius(store: MemoryStore, key: str, direction: str = "upstream", max_hops: int = 5) -> dict:
-    origin = store.find(key)
+def blast_radius(
+    store: MemoryStore, key: str, direction: str = "upstream", max_hops: int = 5, org_id: str | None = None
+) -> dict:
+    origin = store.find(key, org_id=org_id)
     if not origin:
         return {"nodes": [], "error": "not found"}
     seen = {origin.id}
@@ -70,10 +76,13 @@ def blast_radius(store: MemoryStore, key: str, direction: str = "upstream", max_
                 other = e.from_id if e.to_id == nid else e.to_id
                 if other in seen or other not in store.nodes:
                     continue
+                if org_id is not None and store.nodes[other].props.get("org_id") != org_id:
+                    continue
                 seen.add(other)
                 rec = _node(store.nodes[other])
                 rec["via"] = e.type
                 rec["hop"] = hops + 1
+                rec["from"] = nid
                 nodes.append(rec)
                 nxt.append(other)
         frontier = nxt

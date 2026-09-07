@@ -1,36 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Badge, Button, Card, ElapsedTimer, EmptyState, Input, Muted, PageHeading, SectionHeading, Skeleton, Spinner } from "../components/ui";
+import { ClockIcon, FolderIcon, GitBranchIcon, NetworkIcon } from "../components/Icon";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-const card: React.CSSProperties = {
-  border: "1px solid #243",
-  borderRadius: 8,
-  padding: 16,
-  marginTop: 16,
-  background: "#0f1830",
-};
-const input: React.CSSProperties = {
-  background: "#0b1020",
-  border: "1px solid #345",
-  borderRadius: 6,
-  color: "#e8eefc",
-  padding: "8px 10px",
-  marginRight: 8,
-  minWidth: 260,
-};
-const button: React.CSSProperties = {
-  background: "#2d6cdf",
-  border: "none",
-  borderRadius: 6,
-  color: "white",
-  padding: "8px 14px",
-  cursor: "pointer",
-};
-
 export default function AppHome() {
   const [me, setMe] = useState<any>(null);
-  const [repos, setRepos] = useState<any[]>([]);
+  const [repos, setRepos] = useState<any[] | null>(null);
   const [githubUrl, setGithubUrl] = useState("");
   const [name, setName] = useState("");
   const [status, setStatus] = useState<string>("");
@@ -97,58 +74,77 @@ export default function AppHome() {
 
   return (
     <div>
-      <h1>Dashboard</h1>
-      <p style={{ opacity: 0.7 }}>Signed in as {me?.login || me?.error || "…"}</p>
+      <PageHeading icon={<NetworkIcon className="w-5 h-5" />}>Dashboard</PageHeading>
+      <Muted>Signed in as {me?.login || me?.error || "…"}</Muted>
 
-      <div style={card}>
-        <h2 style={{ marginTop: 0 }}>Index a repo</h2>
-        <p style={{ opacity: 0.7, marginTop: 0 }}>
-          Paste any public GitHub URL. It's shallow-cloned locally and parsed with Tree-sitter.
-        </p>
-        <form onSubmit={addAndIndex}>
-          <input
-            style={input}
+      <Card>
+        <SectionHeading icon={<GitBranchIcon />}>Index a repo</SectionHeading>
+        <Muted className="mb-4">Paste any public GitHub URL. It's shallow-cloned locally and parsed with Tree-sitter.</Muted>
+        <form onSubmit={addAndIndex} className="flex flex-wrap items-center gap-2">
+          <Input
+            className="min-w-[280px] flex-1 mr-0"
             placeholder="https://github.com/owner/repo"
             value={githubUrl}
             onChange={(e) => setGithubUrl(e.target.value)}
             disabled={busy}
           />
-          <input
-            style={input}
-            placeholder="name (optional)"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={busy}
-          />
-          <button style={button} type="submit" disabled={busy || !githubUrl.trim()}>
+          <Input className="mr-0 w-40" placeholder="name (optional)" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} />
+          <Button type="submit" disabled={busy || !githubUrl.trim()} className="flex items-center gap-2 whitespace-nowrap">
+            {busy && <Spinner />}
             {busy ? "Working…" : "Add + Index"}
-          </button>
+          </Button>
+          <ElapsedTimer running={busy} />
         </form>
-        {status && <p style={{ opacity: 0.85, whiteSpace: "pre-wrap" }}>{status}</p>}
-      </div>
+        {status && <p className="text-[#e8eefc]/70 text-sm whitespace-pre-wrap mt-3 font-mono bg-black/20 rounded-lg px-3 py-2">{status}</p>}
+      </Card>
 
-      <div style={card}>
-        <h2 style={{ marginTop: 0 }}>Repos</h2>
-        {repos.length === 0 && <p style={{ opacity: 0.7 }}>No repos indexed yet — add one above.</p>}
-        <ul style={{ listStyle: "none", padding: 0 }}>
-          {repos.map((r) => (
-            <li key={r.id} style={{ padding: "8px 0", borderBottom: "1px solid #243" }}>
-              <a href={`/app/repos/${r.id}`} style={{ color: "#9cf", fontWeight: 600 }}>
-                {r.name}
-              </a>
-              <span style={{ opacity: 0.6, marginLeft: 12, fontSize: 13 }}>
-                {r.node_count ? `${r.node_count} nodes` : "not indexed yet"} ·{" "}
-                {r.last_indexed_at ? `indexed ${new Date(r.last_indexed_at).toLocaleString()}` : "never indexed"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      <Card>
+        <SectionHeading icon={<FolderIcon />}>Repos</SectionHeading>
+        {repos === null && (
+          <div className="space-y-2.5">
+            <Skeleton className="h-14 w-full" />
+            <Skeleton className="h-14 w-full" />
+          </div>
+        )}
+        {repos !== null && repos.length === 0 && (
+          <EmptyState
+            icon={<FolderIcon className="w-8 h-8" />}
+            title="No repos indexed yet"
+            description="Paste a GitHub URL above to get started."
+          />
+        )}
+        {repos !== null && repos.length > 0 && (
+          <ul className="list-none p-0 space-y-2">
+            {repos.map((r) => (
+              <li key={r.id}>
+                <a
+                  href={`/app/repo?id=${r.id}`}
+                  className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.05] hover:border-white/10 transition-colors group"
+                >
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <FolderIcon className="w-4 h-4 text-[#e8eefc]/30 shrink-0" />
+                    <span className="text-white font-medium text-sm truncate group-hover:text-[#8ab4ff] transition-colors">{r.name}</span>
+                  </span>
+                  <span className="flex items-center gap-2 text-xs text-[#e8eefc]/50 shrink-0">
+                    {r.node_count ? <Badge tone="success">{r.node_count} nodes</Badge> : <Badge tone="warn">not indexed</Badge>}
+                    {r.last_indexed_at && (
+                      <span className="hidden sm:flex items-center gap-1">
+                        <ClockIcon className="w-3 h-3" />
+                        {new Date(r.last_indexed_at).toLocaleDateString()}
+                      </span>
+                    )}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
-      <p style={{ marginTop: 16 }}>
-        <a href="/app/team" style={{ color: "#9cf" }}>Team</a> ·{" "}
-        <a href="/app/usage" style={{ color: "#9cf" }}>Usage</a> ·{" "}
-        <a href="/app/keys" style={{ color: "#9cf" }}>API keys</a>
+      <p className="mt-5 text-sm text-[#e8eefc]/40 flex gap-4">
+        <a href="/app/team" className="hover:text-white transition-colors">Team</a>
+        <a href="/app/usage" className="hover:text-white transition-colors">Usage</a>
+        <a href="/app/keys" className="hover:text-white transition-colors">API keys</a>
       </p>
     </div>
   );

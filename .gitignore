@@ -12,8 +12,19 @@ build/
 *.egg-info/
 node_modules/
 .next/
-data/
+# A trailing-slash `data/` rule makes git refuse to descend into the directory at
+# all, even for a later `!` negation (a documented git gotcha, confirmed live via
+# `git check-ignore -v` here) — `data/*` instead ignores each direct child by name,
+# which negation of a specific child (no trailing slash) actually works against.
+data/*
+# Exception: the trained learned-reranker model is small (a few KB, plain logistic
+# regression coefficients) and shipping it means a fresh clone can opt into
+# settings.enable_learned_rerank immediately, no need to run eval/train_reranker.py
+# (which reclones+reindexes 3 real repos) just to try it.
+!data/models
+!data/models/reranker.joblib
 *.db
 .DS_Store
 apps/web/.next/
 apps/web/out/
+.claude

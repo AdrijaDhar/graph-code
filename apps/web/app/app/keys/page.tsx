@@ -1,31 +1,9 @@
 "use client";
 import { useState } from "react";
+import { Button, Card, Muted, PageHeading, SectionHeading, Spinner } from "../../components/ui";
+import { KeyIcon } from "../../components/Icon";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-const card: React.CSSProperties = {
-  border: "1px solid #243",
-  borderRadius: 8,
-  padding: 16,
-  marginTop: 16,
-  background: "#0f1830",
-};
-const button: React.CSSProperties = {
-  background: "#2d6cdf",
-  border: "none",
-  borderRadius: 6,
-  color: "white",
-  padding: "8px 14px",
-  cursor: "pointer",
-};
-const pre: React.CSSProperties = {
-  background: "#0b1020",
-  border: "1px solid #243",
-  borderRadius: 6,
-  padding: 12,
-  overflowX: "auto",
-  fontSize: 13,
-};
 
 export default function Keys() {
   const [out, setOut] = useState<any>(null);
@@ -52,32 +30,30 @@ export default function Keys() {
 
   return (
     <div>
-      <h1>MCP API keys</h1>
-      <div style={card}>
-        <p style={{ marginTop: 0, opacity: 0.8 }}>
-          Org-scoped keys for the REST API (Bearer auth, quota-enforced). A new key is
-          shown once; copy it now.
-        </p>
-        <p style={{ marginTop: 0, opacity: 0.6, fontSize: 13 }}>
-          Note: the local <code>graphcode chat</code> / MCP stdio server doesn't check
-          this key yet — it always runs as a single local session, not scoped to your
-          org. The config below is for a future remote-MCP setup; today it's REST-API-only.
-        </p>
-        <button style={button} onClick={createKey} disabled={busy}>
+      <PageHeading icon={<KeyIcon className="w-5 h-5" />}>MCP API keys</PageHeading>
+      <Card>
+        <Muted className="mb-2">Org-scoped keys for the REST API (Bearer auth, quota-enforced). A new key is shown once; copy it now.</Muted>
+        <Muted className="mb-4 text-xs">
+          Note: the local <code className="bg-white/[0.06] px-1 py-0.5 rounded text-[#8ab4ff]">graphcode chat</code> / MCP
+          stdio server doesn't check this key yet — it always runs as a single local session, not scoped to your org.
+          The config below is for a future remote-MCP setup; today it's REST-API-only.
+        </Muted>
+        <Button onClick={createKey} disabled={busy} className="flex items-center gap-2">
+          {busy && <Spinner />}
           {busy ? "Creating…" : "Create key"}
-        </button>
-      </div>
+        </Button>
+      </Card>
 
       {out?.key && (
-        <div style={card}>
-          <h2 style={{ marginTop: 0 }}>New key</h2>
-          <pre style={pre}>{out.key}</pre>
-          <h3>Cursor / MCP client config</h3>
-          <pre style={pre}>{JSON.stringify(out.mcp_json, null, 2)}</pre>
-          <button style={button} onClick={copySnippet}>
-            {copied ? "Copied!" : "Copy config"}
-          </button>
-        </div>
+        <Card>
+          <SectionHeading>New key</SectionHeading>
+          <pre className="bg-black/25 border border-white/10 rounded-lg p-3 overflow-x-auto text-[13px] mb-4 text-[#8ab4ff]">{out.key}</pre>
+          <h3 className="text-sm font-semibold text-[#e8eefc]/70 mb-2">Cursor / MCP client config</h3>
+          <pre className="bg-black/25 border border-white/10 rounded-lg p-3 overflow-x-auto text-[13px] mb-4">
+            {JSON.stringify(out.mcp_json, null, 2)}
+          </pre>
+          <Button onClick={copySnippet}>{copied ? "Copied!" : "Copy config"}</Button>
+        </Card>
       )}
     </div>
   );

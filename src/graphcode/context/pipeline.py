@@ -95,13 +95,31 @@ def retrieve(
     seed_ids: list[str],
     semantic_hits: list[tuple[str, float]] | None = None,
     top: int = 40,
+    bfs_nodes: list[dict] | None = None,
+    learned_reranker=None,
 ) -> list[str]:
     """PPR from the seed(s), fused with semantic hits via RRF. Returns ranked node ids
-    (excluding the seeds themselves)."""
-    structural_ids = [nid for nid, _ in personalized_pagerank(store, seed_ids, top=top)]
+    (excluding the seeds themselves).
+
+    `learned_reranker` (a `queries.learned_rerank.LearnedReranker`, opt-in via
+    `settings.enable_learned_rerank` — see callers in `mcp/server.py`/`saas/app.py`)
+    feeds its own ranking into fuse_rrf as a *third* list rather than replacing RRF
+    outright — the blend variant from `eval/results/reranker.md`'s leave-one-repo-out
+    eval, which won MRR in every fold there while costing less recall@10 than a full
+    replacement. Opt-in and additive by design: a repo where the model doesn't
+    generalize well just gets RRF's existing behavior back for those two lists,
+    diluted only slightly by a third vote."""
+    ppr_ranked = personalized_pagerank(store, seed_ids, top=top)
+    structural_ids = [nid for nid, _ in ppr_ranked]
     semantic_ids = [nid for nid, _ in (semantic_hits or [])]
     if not structural_ids and not semantic_ids:
         return []
+    if learned_reranker is not None:
+        from graphcode.queries.learned_rerank import extract_candidate_features
+
+        feats = extract_candidate_features(ppr_ranked, semantic_hits or [], bfs_nodes or [])
+        learned_ids = learned_reranker.rank(feats)
+        return [nid for nid, _ in fuse_rrf(structural_ids, semantic_ids, learned_ids)]
     return [nid for nid, _ in fuse_rrf(structural_ids, semantic_ids)]
 
 
@@ -208,29 +226,31 @@ def build_context(
     prompt: str = "",
     max_tokens: int = 8000,
     semantic_hits: list[tuple[str, float]] | None = None,
+    org_id: str | None = None,
+    learned_reranker=None,
 ) -> ContextBundle:
     keys = select_seeds(store, files, symbols, prompt)
     if not keys:
         return ContextBundle(seeds=[], used_tokens=0, rendered_prompt="## Structural Context\nNo files or symbols provided.\n")
 
     primary = keys[0]
-    seed_node = store.find(primary)
+    seed_node = store.find(primary, org_id=org_id)
     seed_ids = [seed_node.id] if seed_node else []
 
     front: list[str] = [f"## Structural Context for: {primary}\n"]
-    br = blast_radius(store, primary, direction="upstream", max_hops=3)
+    br = blast_radius(store, primary, direction="upstream", max_hops=3, org_id=org_id)
     up = br.get("nodes") or []
     front.append(f"### Blast radius (upstream of {primary})\n")
     for n in up[:20]:
         front.append(f"- [{n.get('label')}] {n.get('qualified_name') or n.get('path')} via {n.get('via', 'origin')}\n")
     if len(keys) >= 2:
-        sp = shortest_path(store, keys[0], keys[1])
+        sp = shortest_path(store, keys[0], keys[1], org_id=org_id)
         front.append("\n### Dependency path\n")
         for n in sp.get("path") or []:
             via = n.get("via")
             qn = n.get("qualified_name") or n.get("path")
             front.append(f"{qn}" + (f"  --{via}-->" if via else "") + "\n")
-    cc = call_chain(store, primary, max_depth=5)
+    cc = call_chain(store, primary, max_depth=5, org_id=org_id)
     front.append("\n### Call chains\n")
     for path in (cc.get("paths") or [])[:5]:
         names = " → ".join(p.get("name") or p.get("qualified_name", "") for p in path)
@@ -239,7 +259,9 @@ def build_context(
     front_tokens = count_tokens(front_text)
 
     if seed_ids:
-        ranked = retrieve(store, seed_ids, semantic_hits=semantic_hits, top=40)
+        ranked = retrieve(
+            store, seed_ids, semantic_hits=semantic_hits, top=40, bfs_nodes=up, learned_reranker=learned_reranker
+        )
     else:
         ranked = [n["id"] for n in up]
 

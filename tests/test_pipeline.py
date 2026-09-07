@@ -7,6 +7,7 @@ from graphcode.context.pipeline import (
     compile,
     count_tokens,
     extract_signature,
+    retrieve,
     select_seeds,
 )
 from graphcode.loader.memory import MemoryStore
@@ -98,3 +99,44 @@ def test_build_context_no_keys_returns_placeholder():
     bundle = build_context(store, root=None)
     assert "No files or symbols" in bundle.rendered_prompt
     assert bundle.seeds == []
+
+
+def test_retrieve_without_reranker_matches_default_fuse_rrf_behavior():
+    """learned_reranker=None (the default everywhere it's threaded through) must
+    behave identically to before it existed — settings.enable_learned_rerank defaults
+    to False specifically so this is the behavior every existing caller still gets."""
+    store = _store()
+    ranked = retrieve(store, ["seed"], semantic_hits=[("callee", 0.9), ("distant", 0.1)])
+    assert "callee" in ranked
+    assert "distant" in ranked
+
+
+def test_retrieve_calls_learned_reranker_with_full_candidate_set():
+    """Contract test for the opt-in wiring (context/pipeline.py::retrieve +
+    saas/app.py's/mcp/server.py's settings.enable_learned_rerank path): when given a
+    reranker, `retrieve` must build features over the *union* of PPR + semantic
+    candidates and hand them to it — it blends the reranker's ranking into fuse_rrf as
+    a third list (eval/results/reranker.md's "blend" variant) rather than replacing
+    RRF outright, so asserting an exact final order here would just be re-testing RRF
+    arithmetic; what's actually new and worth covering is that the reranker gets
+    invoked at all, with the right inputs. A stub stands in for the real
+    `queries.learned_rerank.LearnedReranker` — its ranking *quality* is what
+    eval/results/reranker.md measures, not this plumbing test."""
+    calls = []
+
+    class SpyReranker:
+        def rank(self, feats):
+            calls.append(set(feats.keys()))
+            return list(feats.keys())
+
+    store = _store()
+    ranked = retrieve(
+        store,
+        ["seed"],
+        semantic_hits=[("callee", 0.9), ("distant", 0.1)],
+        bfs_nodes=[],
+        learned_reranker=SpyReranker(),
+    )
+    assert len(calls) == 1
+    assert calls[0] >= {"callee", "distant"}
+    assert set(ranked) >= {"callee", "distant"}

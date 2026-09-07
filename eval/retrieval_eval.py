@@ -111,7 +111,12 @@ def budget_sweep(svc: IndexService, queries: list[tuple[str, set[str]]], sample:
     return {b: (sum(v) / len(v) if v else 0.0) for b, v in out.items()}
 
 
-def evaluate_repo(repo_url: str, min_cochange: int = 2, max_queries: int = 200) -> dict:
+def gather_repo_queries(
+    repo_url: str, min_cochange: int = 2, max_queries: int = 200
+) -> tuple[IndexService, list[tuple[str, set[str]]]]:
+    """Clone + index a repo and build its co-change query set. Split out of
+    `evaluate_repo` so `eval/train_reranker.py` can reuse the exact same repo state
+    and queries a training run needs, without re-implementing the mining/indexing."""
     repo_dir = ensure_cloned(repo_url)
     co_changes = mine_co_changes(repo_dir, min_count=min_cochange)
 
@@ -128,34 +133,51 @@ def evaluate_repo(repo_url: str, min_cochange: int = 2, max_queries: int = 200) 
         gold = {o for o in others if o in indexed_paths}
         if gold:
             queries.append((f, gold))
-    queries = queries[:max_queries]
+    return svc, queries[:max_queries]
 
-    scores: dict[str, dict[str, list[float]]] = {
-        m: {"recall": [], "mrr": []} for m in ("file", "semantic", "structural_bfs", "structural_ppr", "hybrid_rrf")
-    }
+
+def collect_signals(svc: IndexService, seed_path: str) -> dict:
+    """Raw per-query retrieval signals (ranked ids + scores from each method, before
+    collapsing function/class ids down to file paths for the recall@k methods below).
+    Shared by `evaluate_repo` (recall/MRR reporting) and `eval/train_reranker.py`
+    (feature extraction for the learned re-ranker) so both see identical signals for
+    the same query — the whole point of the comparison is scoring the same candidates
+    differently, not scoring different candidates."""
+    seed_node = svc.memory.find(seed_path)
+    if seed_node is None:
+        return {"semantic_hits": [], "ppr_ranked": [], "bfs_nodes": []}
+    hits = semantic_search(svc, seed_node.props.get("qualified_name", seed_path), k=50)
+    semantic_hits = [(h["id"], h.get("score", 0.0)) for h in hits.get("hits") or []]
+    ppr_ranked = personalized_pagerank(svc.memory, [seed_node.id], top=60)
+    br = blast_radius(svc.memory, seed_path, direction="both", max_hops=3)
+    bfs_nodes = br.get("nodes") or []
+    return {"semantic_hits": semantic_hits, "ppr_ranked": ppr_ranked, "bfs_nodes": bfs_nodes}
+
+
+def _ids_to_files(svc: IndexService, ids: list[str]) -> list[str]:
+    return _dedup_files([svc.memory.nodes[nid].props.get("path", "") for nid in ids if nid in svc.memory.nodes])
+
+
+def evaluate_repo(
+    repo_url: str, min_cochange: int = 2, max_queries: int = 200, reranker=None
+) -> dict:
+    svc, queries = gather_repo_queries(repo_url, min_cochange=min_cochange, max_queries=max_queries)
+
+    methods = ["file", "semantic", "structural_bfs", "structural_ppr", "hybrid_rrf"]
+    if reranker is not None:
+        methods.append("hybrid_learned")
+    scores: dict[str, dict[str, list[float]]] = {m: {"recall": [], "mrr": []} for m in methods}
 
     for seed_path, gold in queries:
-        seed_node = modules[seed_path]
+        sig = collect_signals(svc, seed_path)
+        semantic_ids = [nid for nid, _ in sig["semantic_hits"]]
+        structural_ids = [nid for nid, _ in sig["ppr_ranked"]]
 
-        hits = semantic_search(svc, seed_node.props.get("qualified_name", seed_path), k=50)
-        semantic_ids = [h["id"] for h in hits.get("hits") or []]
-        semantic_files = _dedup_files(
-            [svc.memory.nodes[nid].props.get("path", "") for nid in semantic_ids if nid in svc.memory.nodes]
-        )
-
-        br = blast_radius(svc.memory, seed_path, direction="both", max_hops=3)
-        bfs_files = _dedup_files([n.get("path", "") for n in br.get("nodes") or []])
-
-        ppr_ranked = personalized_pagerank(svc.memory, [seed_node.id], top=60)
-        structural_ids = [nid for nid, _ in ppr_ranked]
-        ppr_files = _dedup_files(
-            [svc.memory.nodes[nid].props.get("path", "") for nid in structural_ids if nid in svc.memory.nodes]
-        )
-
+        semantic_files = _ids_to_files(svc, semantic_ids)
+        bfs_files = _dedup_files([n.get("path", "") for n in sig["bfs_nodes"]])
+        ppr_files = _ids_to_files(svc, structural_ids)
         fused = fuse_rrf(structural_ids, semantic_ids)
-        hybrid_files = _dedup_files(
-            [svc.memory.nodes[nid].props.get("path", "") for nid, _ in fused if nid in svc.memory.nodes]
-        )
+        hybrid_files = _ids_to_files(svc, [nid for nid, _ in fused])
 
         per_method = {
             "file": [],
@@ -164,6 +186,13 @@ def evaluate_repo(repo_url: str, min_cochange: int = 2, max_queries: int = 200) 
             "structural_ppr": ppr_files,
             "hybrid_rrf": hybrid_files,
         }
+        if reranker is not None:
+            from graphcode.queries.learned_rerank import extract_candidate_features
+
+            feats = extract_candidate_features(sig["ppr_ranked"], sig["semantic_hits"], sig["bfs_nodes"])
+            learned_ranked = reranker.rank(feats)
+            per_method["hybrid_learned"] = _ids_to_files(svc, learned_ranked)
+
         for method, ranked in per_method.items():
             scores[method]["recall"].append(_recall_at_k(ranked, gold, K))
             scores[method]["mrr"].append(_mrr(ranked, gold))

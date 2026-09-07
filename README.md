@@ -1,35 +1,98 @@
 # Graph-Code Copilot
 
-Parse a repository with Tree-sitter, store code structure in **Memgraph** (Cypher) plus **RocksDB** snapshots/vectors, and serve dependency context to an LLM agent over **MCP**.
+Parse a repository with Tree-sitter into a real structural graph (functions, classes,
+imports, calls) and answer the question text search and plain RAG can't: **"what
+breaks if I change this?"** — plus shortest path, call chains, and hybrid semantic
+search, served to any LLM agent over MCP.
 
 ## What it does
 
-- Nodes: Module, Class, Function, Variable
-- Edges: CONTAINS, IMPORTS, INHERITS, CALLS
-- Queries: shortest path, blast radius, call chains, hybrid semantic search
+- Nodes: Module, Class, Function, Variable. Edges: CONTAINS, IMPORTS, INHERITS, CALLS.
+- Queries: blast radius, shortest path, call chains, hybrid semantic search
 - File watcher for live reindex
-- Mini-SaaS: GitHub login, teams, API keys, usage quotas, admin, public `/impact`
+- Languages: Python, TypeScript/JavaScript, Go, Java, Rust, C, C++
 
-Languages: Python, TypeScript/JavaScript, Go, Java, Rust, C, C++.
-
-## Quick start
+## Install (needed for every path below except the VS Code extension's own install)
 
 ```bash
+git clone https://github.com/AdrijaDhar/graph-code
+cd graph-code
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest
-graphcode index tests/fixtures/mini_repo
-uvicorn graphcode.saas.app:app --reload --port 8000
+pytest   # confirm it's all green before relying on it
 ```
 
-Optional Memgraph:
+Everything below works out of the box on the in-process `MemoryStore` + RocksDB
+snapshots — Memgraph is optional, only useful if you want to run real Cypher queries
+against the graph directly:
 
 ```bash
 docker compose up -d memgraph
 export MEMGRAPH_URI=bolt://localhost:7687
 ```
 
-MCP agent (built-in, no IDE required):
+## Pick your path
+
+There are five ways to use this, and they are **not equally heavy** — most need
+nothing hosted at all:
+
+| You want... | Use... | Hosting needed? |
+|---|---|---|
+| Your existing AI tool (Claude Code, Claude Desktop, Cursor) to understand your codebase's structure | [MCP server](#1-plug-into-claude-desktop-claude-code-or-cursor) | **None** — spawned locally by your tool |
+| A standalone agent that proposes diffs interactively | [`graphcode chat`](#2-standalone-cli-agent) | **None** — runs on your machine |
+| Automatic "here's what breaks" comments on PRs | [PR bot](#3-pr-bot-automatic-review-comments) | **None** — runs on GitHub's own CI, not yours |
+| Blast radius / semantic search inside VS Code | [VS Code extension](#4-vs-code-extension) | **None** — local install, like any editor extension |
+| A hosted web app strangers can try via a browser link | [Web app deploy](#5-hosted-web-app) | **Yes** — the only path that needs you to actually deploy something |
+
+The first four are the low-friction ones: no server to stand up, no account beyond
+what you already have. Only the last one is a real infrastructure commitment.
+
+---
+
+## 1. Plug into Claude Desktop, Claude Code, or Cursor
+
+Your existing agent gains `graph_blast_radius`, `graph_shortest_path`,
+`graph_semantic_search`, `graph_call_chain`, `graph_compile_context`, and
+`graph_read_file` as tools it can call on its own while it works — no separate app to
+run, no server to host. Your AI tool spawns `graphcode mcp-server` itself, as a local
+subprocess, exactly like it would spawn any other local MCP server.
+
+Find your venv's `graphcode` binary first (MCP hosts don't inherit your shell PATH,
+so this needs to be an absolute path):
+
+```bash
+which graphcode   # e.g. /Users/you/graph-code/.venv/bin/graphcode
+```
+
+**Claude Desktop** — add to `claude_desktop_config.json` (Settings → Developer → Edit
+Config):
+
+```json
+{
+  "mcpServers": {
+    "graph-code": {
+      "command": "/absolute/path/to/.venv/bin/graphcode",
+      "args": ["mcp-server"]
+    }
+  }
+}
+```
+
+**Claude Code** — from the repo you want it to understand:
+
+```bash
+claude mcp add graph-code /absolute/path/to/.venv/bin/graphcode -- mcp-server
+```
+
+**Cursor** — add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
+same JSON shape as Claude Desktop above.
+
+Restart the host, then ask it to call `graph_index_repo` on the repo path once per
+session (the graph lives in memory, so it needs indexing after each restart) — after
+that, ask normal questions ("what breaks if I change X") and the agent reaches for
+these tools itself when they're relevant, same as any other tool it has.
+
+## 2. Standalone CLI agent
 
 ```bash
 export GROQ_API_KEY=...   # free, no card: https://console.groq.com/keys
@@ -40,8 +103,7 @@ Spawns the `graphcode` MCP server as a subprocess, connects over the real MCP pr
 (`src/graphcode/mcp/client.py`), and drives it with a free open-weight model on Groq
 doing real tool-calling — the agent decides when to call `graph_blast_radius`,
 `graph_read_file`, etc., then proposes changes as a diff you confirm before anything is
-written to disk. Any other MCP client (Claude Code, Claude Desktop, etc.) can also
-launch `python -m graphcode.mcp.server` directly if you'd rather use one of those.
+written to disk.
 
 Verified live end-to-end (real Groq calls, real repo): asked it to rename a function in
 `utils.py`, and it correctly proposed the rename **and** the caller's updated import +
@@ -59,7 +121,96 @@ to crash with a raw `EOFError` instead of just skipping the file. All covered by
 tries or hit the round limit — the system prompt caps tool calls at 3 per turn to fit
 inside it.
 
-Web UI (paste any public GitHub URL and try it):
+## 3. PR bot (automatic review comments)
+
+A GitHub Action that diffs a PR, finds which indexed functions/classes the diff
+actually touches, and comments the real callers/importers of each — using the
+structural graph, not text search, so it catches a caller that never mentions the
+changed symbol's name in its own diff.
+
+**No deployment, ever.** It's a workflow file that runs entirely on GitHub's own CI
+infrastructure — not a server you or anyone else hosts. The usage model is exactly
+three steps:
+
+1. Copy `.github/workflows/pr-blast-radius.yml` (already in this repo) into any
+   repo's `.github/workflows/` — yours or anyone else's, it isn't specific to this
+   project's own codebase.
+2. Open a pull request.
+3. Wait about a minute. A comment appears.
+
+```yaml
+name: blast-radius-comment
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  pull-requests: write
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needed: diffs against origin/<base> by name, and blast
+                            # radius needs real repo structure, not a shallow clone
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Installs the graphcode *package* from its own repo — not `pip install -e .`,
+      # which would instead try to install *this* repo (yours) as if it were
+      # graph-code itself.
+      - run: pip install "graphcode @ git+https://github.com/AdrijaDhar/graph-code.git"
+      - run: >
+          graphcode pr-comment --repo . --base origin/${{ github.base_ref }}
+          --head HEAD --post
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+```
+
+Try it locally first, against any two refs in any repo (prints the comment instead of
+posting it — add `--post` with `GITHUB_TOKEN`/`GITHUB_REPOSITORY`/`PR_NUMBER` set to
+actually comment):
+
+```bash
+graphcode pr-comment --repo . --base origin/main --head HEAD
+```
+
+## 4. VS Code extension
+
+Blast radius, shortest path, and semantic search from inside the editor — right-click
+a symbol, or use the Command Palette. Lives in [`vscode-extension/`](vscode-extension/).
+
+**No deployment** — same as the Python or ESLint extensions, this is a local install
+that reads *your* local code by shelling out to the `graphcode` CLI on your machine
+(the `pip install` from the top of this README, already done if you're following
+along in order). Two ways to get it:
+
+**Right now, locally** — a packaged `.vsix` is already built:
+
+```bash
+code --install-extension vscode-extension/graph-code-0.1.0.vsix
+```
+
+(No `code` CLI? Open VS Code → Extensions view → `...` menu → *Install from VSIX*.)
+
+**From the Marketplace** (once published — gives real install-count stats, not
+needed just to try it yourself):
+
+```bash
+ext install adrijadhar.graph-code
+```
+
+Once installed: open a folder, run **Graph-Code: Index Workspace** (also sits in the
+status bar), then right-click any symbol for **Blast Radius for Symbol at Cursor**, or
+reach for **Graph-Code: Semantic Search** / **Shortest Path** from the Command
+Palette. Every result is a jump-to-location QuickPick.
+
+## 5. Hosted web app
+
+The one path that's an actual infrastructure commitment — you're standing up a public
+URL, not just running something locally.
 
 ```bash
 # terminal 1
@@ -76,9 +227,17 @@ before querying: **v1 keeps one repo's graph active in memory at a time** (match
 project's clear-and-reload design), so switching between repos means re-clicking Load,
 not that queries silently return another repo's data.
 
-## Deploy ($0)
+**To actually make that URL public**, pick one:
+- [deploy/render.md](deploy/render.md) — **recommended**, simplest: free HTTPS
+  subdomain out of the box, no VM/domain/TLS setup. Trade-off: the free tier sleeps
+  after 15 minutes idle.
+- [deploy/oracle-cloud.md](deploy/oracle-cloud.md) — Oracle Always-Free VM, stays up
+  permanently, but you manage Docker/Caddy/DNS yourself and need a domain.
 
-See [deploy/oracle-cloud.md](deploy/oracle-cloud.md). Stack: Oracle Always Free VM (API + Memgraph + RocksDB), Cloudflare Pages (Next.js), Supabase Postgres, Stripe **test** mode.
+No payment tier required either way — every plan in `saas/usage.py` is priced at $0;
+Stripe is entirely optional and only relevant if you later want to charge for it.
+
+---
 
 ## MCP tools
 
@@ -89,3 +248,9 @@ See [deploy/oracle-cloud.md](deploy/oracle-cloud.md). Stack: Oracle Always Free 
 See [benchmarks/README.md](benchmarks/README.md): resolver precision/recall against hand-verified ground truth, index/query performance at scale (including incremental single-file reindex latency), and a task-level eval measuring whether graph context actually improves an LLM agent's success rate on cross-file bug fixes vs. a same-file-only baseline.
 
 See [eval/README.md](eval/README.md): retrieval quality (recall@10, MRR) against ground truth mined for free from real repos' git commit history, comparing file/semantic/structural/hybrid retrieval and sweeping token budget through the tiered context compiler.
+
+See [eval/results/reranker.md](eval/results/reranker.md): a learned re-ranker (trained on the same git co-change labels) evaluated with leave-one-repo-out cross-validation — genuine cross-repo generalization, with an honestly-reported case where hyperparameter tuning didn't help. Off by default (`ENABLE_LEARNED_RERANK=true` to opt in) since it's a real research result with real per-repo trade-offs, not something that should silently change every query's ranking.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 
 from graphcode.config import settings
-from graphcode.context.compiler import compile_context
+from graphcode.context.compiler import compile_context, slice_source
 from graphcode.context.pipeline import build_context
 from graphcode.indexer import get_index_service
 from graphcode.queries.call_chain import call_chain
@@ -339,7 +339,7 @@ def q_blast(symbol: str, direction: str = "upstream", ctx=Depends(require_user))
     if not ok:
         raise HTTPException(429, msg)
     t0 = time.time()
-    out = blast_radius(get_index_service().memory, symbol, direction=direction)
+    out = blast_radius(get_index_service().memory, symbol, direction=direction, org_id=str(org.id))
     record_usage(org.id, "query.blast", latency_ms=int((time.time() - t0) * 1000))
     return out
 
@@ -351,7 +351,7 @@ def q_path(from_symbol: str, to_symbol: str, ctx=Depends(require_user)):
     if not ok:
         raise HTTPException(429, msg)
     t0 = time.time()
-    out = shortest_path(get_index_service().memory, from_symbol, to_symbol)
+    out = shortest_path(get_index_service().memory, from_symbol, to_symbol, org_id=str(org.id))
     record_usage(org.id, "query.path", latency_ms=int((time.time() - t0) * 1000))
     return out
 
@@ -360,16 +360,44 @@ def q_path(from_symbol: str, to_symbol: str, ctx=Depends(require_user)):
 def q_chain(symbol: str, ctx=Depends(require_user)):
     _, org = ctx
     t0 = time.time()
-    out = call_chain(get_index_service().memory, symbol)
+    out = call_chain(get_index_service().memory, symbol, org_id=str(org.id))
     record_usage(org.id, "query.chain", latency_ms=int((time.time() - t0) * 1000))
     return out
 
 
-def _semantic_hits_for(svc, prompt: str, files: list[str] | None, symbols: list[str] | None):
+@app.get("/v1/files/source")
+def files_source(path: str, start: int = 1, end: int = 60, ctx=Depends(require_user)):
+    """Read-only source slice for the web UI's code-preview panels — wraps the
+    existing `slice_source` helper (already used by the context compiler), no new
+    parsing/resolution logic. Path-traversal-safe: rejects anything resolving outside
+    the active repo root, same check as the MCP server's graph_read_file tool."""
+    svc = get_index_service()
+    root = (svc.last_index or {}).get("root")
+    if not root:
+        raise HTTPException(400, "no repo indexed yet")
+    root_p = Path(root).resolve()
+    target = (root_p / path).resolve()
+    if root_p not in target.parents and target != root_p:
+        raise HTTPException(400, f"path escapes repo root: {path}")
+    text = slice_source(root_p, path, start, end, budget_lines=max(1, end - start + 1))
+    if not text:
+        raise HTTPException(404, f"no such file: {path}")
+    return {"path": path, "start": start, "end": end, "text": text}
+
+
+def _learned_reranker():
+    if not settings.enable_learned_rerank:
+        return None
+    from graphcode.queries.learned_rerank import get_default_reranker
+
+    return get_default_reranker()
+
+
+def _semantic_hits_for(svc, prompt: str, files: list[str] | None, symbols: list[str] | None, org_id: str):
     query_text = prompt or next(iter((symbols or []) + (files or [])), "")
     if not query_text:
         return None
-    hits = semantic_search(svc, query_text, k=40)
+    hits = semantic_search(svc, query_text, k=40, org_id=org_id)
     return [(h["id"], h["score"]) for h in hits.get("hits") or []]
 
 
@@ -380,7 +408,7 @@ def q_ctx(body: QueryIn, ctx=Depends(require_user)):
     if not ok:
         raise HTTPException(429, msg)
     svc = get_index_service()
-    semantic_hits = _semantic_hits_for(svc, body.prompt, body.files, body.symbols)
+    semantic_hits = _semantic_hits_for(svc, body.prompt, body.files, body.symbols, org_id=str(org.id))
     text = compile_context(
         svc.memory,
         root=(svc.last_index or {}).get("root"),
@@ -389,6 +417,8 @@ def q_ctx(body: QueryIn, ctx=Depends(require_user)):
         prompt=body.prompt,
         max_tokens=body.max_tokens,
         semantic_hits=semantic_hits,
+        org_id=str(org.id),
+        learned_reranker=_learned_reranker(),
     )
     record_usage(org.id, "query.context", tokens_out=len(text.split()))
     return {"context": text}
@@ -404,7 +434,7 @@ def q_ctx_structured(body: QueryIn, ctx=Depends(require_user)):
     if not ok:
         raise HTTPException(429, msg)
     svc = get_index_service()
-    semantic_hits = _semantic_hits_for(svc, body.prompt, body.files, body.symbols)
+    semantic_hits = _semantic_hits_for(svc, body.prompt, body.files, body.symbols, org_id=str(org.id))
     bundle = build_context(
         svc.memory,
         root=(svc.last_index or {}).get("root"),
@@ -413,6 +443,8 @@ def q_ctx_structured(body: QueryIn, ctx=Depends(require_user)):
         prompt=body.prompt,
         max_tokens=body.max_tokens,
         semantic_hits=semantic_hits,
+        org_id=str(org.id),
+        learned_reranker=_learned_reranker(),
     )
     record_usage(org.id, "query.context", tokens_out=bundle.used_tokens)
     return {

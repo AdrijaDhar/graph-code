@@ -89,10 +89,18 @@ class MemoryStore:
         c["edges"] = sum(len(v) for v in self.out.values())
         return dict(c)
 
-    def find(self, key: str) -> GraphNode | None:
-        if key in self.nodes:
-            return self.nodes[key]
+    def find(self, key: str, org_id: str | None = None) -> GraphNode | None:
+        """`org_id`, when given, restricts matches to that org's nodes — needed because
+        `_hydrate()` warm-loads every org's persisted snapshots into this same shared
+        store, so an unscoped lookup can otherwise resolve a different tenant's symbol
+        of the same name (a real cross-tenant leak in the multi-org SaaS app, since
+        this is the resolution `blast_radius`/`shortest_path`/`call_chain` all use)."""
+        direct = self.nodes.get(key)
+        if direct is not None and (org_id is None or direct.props.get("org_id") == org_id):
+            return direct
         for n in self.nodes.values():
+            if org_id is not None and n.props.get("org_id") != org_id:
+                continue
             if n.props.get("path") == key or n.props.get("qualified_name") == key:
                 return n
             if key in n.props.get("qualified_name", "") or n.props.get("path", "").endswith(key):

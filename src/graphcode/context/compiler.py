@@ -25,6 +25,8 @@ def compile_context(
     prompt: str = "",
     max_tokens: int = 8000,
     semantic_hits: list[tuple[str, float]] | None = None,
+    org_id: str | None = None,
+    learned_reranker=None,
 ) -> str:
     """Thin, backward-compatible wrapper: real logic lives in context/pipeline.py's
     select_seeds -> retrieve -> fuse -> compile stages. Kept here, returning just the
@@ -40,5 +42,7 @@ def compile_context(
         prompt=prompt,
         max_tokens=max_tokens,
         semantic_hits=semantic_hits,
+        org_id=org_id,
+        learned_reranker=learned_reranker,
     )
     return bundle.rendered_prompt

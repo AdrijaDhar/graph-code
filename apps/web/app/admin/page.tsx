@@ -1,19 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Card, PageHeading, Skeleton, StatTile } from "../components/ui";
+import { ChartIcon, ShieldIcon, UsersIcon } from "../components/Icon";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-const card: React.CSSProperties = {
-  border: "1px solid #243",
-  borderRadius: 8,
-  padding: 16,
-  marginTop: 16,
-  background: "#0f1830",
-};
-const stat: React.CSSProperties = {
-  display: "inline-block",
-  marginRight: 32,
-};
 
 export default function Admin() {
   const [data, setData] = useState<any>(null);
@@ -34,51 +24,48 @@ export default function Admin() {
   if (error) {
     return (
       <div>
-        <h1>Admin</h1>
-        <div style={card}>{error}</div>
+        <PageHeading icon={<ShieldIcon className="w-5 h-5" />}>Admin</PageHeading>
+        <Card>{error}</Card>
       </div>
     );
   }
 
   return (
     <div>
-      <h1>Admin</h1>
-      <div style={card}>
-        <div style={stat}>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{data?.users ?? "…"}</div>
-          <div style={{ opacity: 0.6 }}>Users</div>
-        </div>
-        <div style={stat}>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{data?.orgs ?? "…"}</div>
-          <div style={{ opacity: 0.6 }}>Orgs</div>
-        </div>
-        <div style={stat}>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{data?.usage_events ?? "…"}</div>
-          <div style={{ opacity: 0.6 }}>Usage events</div>
-        </div>
-      </div>
+      <PageHeading icon={<ShieldIcon className="w-5 h-5" />}>Admin</PageHeading>
+      <Card>
+        {data === null ? (
+          <Skeleton className="h-12 w-full" />
+        ) : (
+          <div className="grid grid-cols-3 gap-6">
+            <StatTile value={data.users} label="Users" icon={<UsersIcon />} />
+            <StatTile value={data.orgs} label="Orgs" icon={<UsersIcon />} />
+            <StatTile value={data.usage_events} label="Usage events" icon={<ChartIcon />} />
+          </div>
+        )}
+      </Card>
 
-      <div style={card}>
-        <h2 style={{ marginTop: 0 }}>Recent users</h2>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <Card>
+        <h2 className="text-[0.95rem] font-semibold text-white mt-0 mb-3">Recent users</h2>
+        <table className="w-full border-collapse text-sm">
           <thead>
-            <tr style={{ textAlign: "left", opacity: 0.6 }}>
-              <th style={{ padding: "4px 8px" }}>ID</th>
-              <th style={{ padding: "4px 8px" }}>Login</th>
-              <th style={{ padding: "4px 8px" }}>GitHub ID</th>
+            <tr className="text-left text-[#e8eefc]/40 text-xs uppercase tracking-wide">
+              <th className="px-3 py-2 font-medium">ID</th>
+              <th className="px-3 py-2 font-medium">Login</th>
+              <th className="px-3 py-2 font-medium">GitHub ID</th>
             </tr>
           </thead>
           <tbody>
             {(data?.recent_users || []).map((u: any) => (
-              <tr key={u.id} style={{ borderTop: "1px solid #243" }}>
-                <td style={{ padding: "4px 8px" }}>{u.id}</td>
-                <td style={{ padding: "4px 8px" }}>{u.login}</td>
-                <td style={{ padding: "4px 8px" }}>{u.github_id}</td>
+              <tr key={u.id} className="border-t border-white/[0.05] hover:bg-white/[0.02]">
+                <td className="px-3 py-2 text-[#e8eefc]/60">{u.id}</td>
+                <td className="px-3 py-2 text-white">{u.login}</td>
+                <td className="px-3 py-2 text-[#e8eefc]/60">{u.github_id}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
     </div>
   );
 }

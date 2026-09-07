@@ -49,14 +49,28 @@ SYSTEM_PROMPT = (
 
 
 class GraphCodeAgent:
-    """Wraps an already-open MCP ClientSession plus a Groq tool-calling loop."""
+    """Wraps an already-open MCP ClientSession plus a Groq tool-calling loop.
 
-    def __init__(self, session: ClientSession, repo_path: Path, model: str | None = None) -> None:
+    `system_prompt` and `index_on_setup` are overridable (default: the interactive
+    graph-tool CLI's own prompt and behavior, unchanged) so the same tool-loop and
+    Groq-quirk recovery logic can drive a differently-tooled agent for benchmarking —
+    see `benchmarks/agent_eval/live_runner.py`, which points this at a `read_file`
+    + `grep`-only MCP server with no graph tools at all, as the comparison baseline."""
+
+    def __init__(
+        self,
+        session: ClientSession,
+        repo_path: Path,
+        model: str | None = None,
+        system_prompt: str = SYSTEM_PROMPT,
+        index_on_setup: bool = True,
+    ) -> None:
         self.session = session
         self.repo_path = repo_path.resolve()
         self.model = model
+        self.index_on_setup = index_on_setup
         self.tools: list[dict] = []
-        self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        self.messages: list[dict] = [{"role": "system", "content": system_prompt}]
 
     async def setup(self) -> None:
         tools_result = await self.session.list_tools()
@@ -71,9 +85,11 @@ class GraphCodeAgent:
             }
             for t in tools_result.tools
         ]
-        print(f"Connected. {len(self.tools)} tools available. Indexing {self.repo_path} ...")
-        result = await self._call_tool("graph_index_repo", {"path": str(self.repo_path)})
-        print(result)
+        print(f"Connected. {len(self.tools)} tools available.")
+        if self.index_on_setup:
+            print(f"Indexing {self.repo_path} ...")
+            result = await self._call_tool("graph_index_repo", {"path": str(self.repo_path)})
+            print(result)
 
     async def _call_tool(self, name: str, arguments: dict) -> str:
         result = await self.session.call_tool(name, arguments=arguments)
