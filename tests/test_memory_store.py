@@ -80,3 +80,50 @@ def test_delete_module_scoped_by_org_id():
     store.delete_module("m.py", org_id="org1")
     assert "x" not in store.nodes
     assert "y" in store.nodes
+
+
+def test_find_prefers_dotted_suffix_match_over_unrelated_substring():
+    """Regression test for a real, previously-reported bug: querying "feedback" could
+    match a stray variable whose qualified_name merely *contains* "feedback" as a
+    substring (e.g. a variable inside scripts/export_feedback_csv.py) purely because
+    dict iteration reached it first, before the actually-intended function
+    `api.app.feedback`. find() must rank a dotted-suffix match (qn ending in
+    ".feedback") above a bare substring match, and prefer non-Variable symbols among
+    substring matches, regardless of insertion order."""
+    store = MemoryStore()
+    store.load_batch(
+        GraphBatch(
+            nodes=[
+                # Inserted FIRST deliberately — the old bug was exactly "first loose
+                # match wins", so this must still lose despite coming first.
+                GraphNode(
+                    id="stray_var",
+                    label="Variable",
+                    props={"path": "scripts/export_feedback_csv.py", "qualified_name": "scripts.export_feedback_csv.raw_feedback"},
+                ),
+                GraphNode(
+                    id="real_fn",
+                    label="Function",
+                    props={"path": "api/app.py", "qualified_name": "api.app.feedback"},
+                ),
+            ]
+        )
+    )
+    found = store.find("feedback")
+    assert found is not None
+    assert found.id == "real_fn"
+
+
+def test_find_exact_qualified_name_beats_substring_match():
+    store = MemoryStore()
+    store.load_batch(
+        GraphBatch(
+            nodes=[
+                GraphNode(id="a", label="Function", props={"path": "x.py", "qualified_name": "x.normalize_scores"}),
+                GraphNode(id="b", label="Function", props={"path": "y.py", "qualified_name": "normalize"}),
+            ]
+        )
+    )
+    found = store.find("normalize")
+    assert found is not None
+    assert found.id == "b"

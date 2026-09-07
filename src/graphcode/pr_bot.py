@@ -17,6 +17,7 @@ import httpx
 
 from graphcode.indexer import IndexService
 from graphcode.queries.paths import blast_radius
+from graphcode.queries.test_impact import find_affected_tests
 from graphcode.schema import GraphNode
 
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
@@ -91,6 +92,7 @@ def build_comment(
         return ""
 
     with_callers: list[tuple[GraphNode, list[dict]]] = []
+    all_tests: dict[str, dict] = {}  # keyed by test node id, deduped across changed symbols
     for node in changed:
         br = blast_radius(svc.memory, node.id, direction=direction, max_hops=max_hops)
         # CONTAINS is structural nesting (a function's own containing module, or a
@@ -104,6 +106,8 @@ def build_comment(
         ]
         if callers:
             with_callers.append((node, callers))
+        for t in find_affected_tests(svc.memory, node.id).get("tests") or []:
+            all_tests[t["id"]] = t
 
     lines = [
         "### 🕸️ Blast radius for this PR",
@@ -112,6 +116,23 @@ def build_comment(
         "who calls or imports what this PR changes, found by traversing the real "
         "call/import graph, not text search.",
     ]
+
+    if all_tests:
+        test_paths = sorted({t.get("path", "") for t in all_tests.values() if t.get("path")})
+        lines.append("")
+        lines.append(f"**✅ {len(all_tests)} test(s) exercise the changed code** (found by tracing calls "
+                      f"backward, not by filename convention):")
+        for path in test_paths[:MAX_REPORTED_SYMBOLS]:
+            names = sorted(
+                t.get("qualified_name") or t.get("name") or "?" for t in all_tests.values() if t.get("path") == path
+            )
+            lines.append(f"- `{path}` — {', '.join(names)}")
+        if len(test_paths) > MAX_REPORTED_SYMBOLS:
+            lines.append(f"- …and {len(test_paths) - MAX_REPORTED_SYMBOLS} more test file(s)")
+    else:
+        lines.append("")
+        lines.append("**⚠️ No indexed tests were found calling the changed code** (even transitively) — "
+                      "consider whether this PR needs test coverage.")
 
     if not with_callers:
         lines.append("")

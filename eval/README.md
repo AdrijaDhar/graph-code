@@ -21,18 +21,27 @@ much gold-relevant context is captured per token.
 |---|---|---|---|---|---|---|---|
 | pallets/click | Python | 54 | 0.000 | 0.342 | 0.364 | 0.407 | **0.469** |
 | tiangolo/typer | Python | 71 | 0.000 | 0.331 | 0.155 | 0.360 | **0.426** |
-| urfave/cli | Go | 53 | 0.000 | **0.336** | 0.273 | 0.307 | 0.331 |
+| urfave/cli | Go | 53 | 0.000 | **0.336** | 0.273 | 0.304 | 0.327 |
 
 **M3's acceptance criterion — hybrid_rrf recall@10 beats both file and semantic — holds
 on 2 of 3 repos, not universally.** On the Go repo, `hybrid_rrf` (0.331) is essentially
 tied with, and technically just under, `semantic` alone (0.336). Not smoothed over: this
 is the real result of adding a 3rd repo specifically to check whether the claim
-generalizes, and it doesn't cleanly. Plausible cause, tied to an already-documented
-limitation (`benchmarks/README.md`'s B1 section): Go cross-package imports without a
-`go.mod` don't resolve, so the structural graph PPR walks is sparser for Go than for
-Python, weakening the "structural" half of the fusion specifically for this language —
-worth confirming with a Go repo that has `go.mod`-based resolution working, not done
-here. Take the Python result as the stronger evidence; the Go result as a genuine,
+generalizes, and it doesn't cleanly.
+
+**Update**: the leading hypothesis here was that Go cross-package imports without
+go.mod-based resolution left the structural graph sparser for Go than Python — since
+tested directly, and the hypothesis doesn't hold. `resolve_imports`/`resolve_calls`
+now read go.mod and correctly resolve cross-package calls (verified by a real
+multi-file-package unit test, `tests/test_go_import_resolution.py`), but re-running
+this exact eval afterward moved the numbers by noise-level amounts (structural_ppr
+0.307 → 0.304, hybrid_rrf 0.331 → 0.327) — essentially unchanged. So cross-package
+import resolution was real and worth fixing on its own correctness merits (confirmed:
++4 edges on urfave/cli, not the +307 a naive multi-file-fanout version produced and
+which measurably *hurt* recall by diluting PPR's random-walk mass — see
+`resolver/imports.py::_go_import_paths`), but it was not, in fact, the explanation for
+Go's weaker retrieval signal here. The actual cause remains open — take the Python
+result as the stronger evidence; the Go result as a genuine, still-unexplained,
 language-dependent caveat, not a contradiction to paper over.
 
 Also worth keeping: on a smaller 30-query subsample of click, `structural_ppr` alone

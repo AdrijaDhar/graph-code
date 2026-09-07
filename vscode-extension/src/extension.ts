@@ -194,6 +194,55 @@ async function shortestPath() {
   }
 }
 
+async function affectedTests(symbol: string) {
+  const root = getWorkspaceRoot();
+  if (!root) return;
+  try {
+    const result = await runGraphcode(["query", "affected-tests", symbol], root);
+    if (result.error) {
+      vscode.window.showWarningMessage(`Graph-Code: "${symbol}" — ${result.error}`);
+      return;
+    }
+    const tests = result.tests || [];
+    if (tests.length === 0) {
+      vscode.window.showWarningMessage(
+        `Graph-Code: no indexed tests call "${symbol}" (even transitively) — consider adding coverage.`
+      );
+      return;
+    }
+    const items: NodePickItem[] = tests.map((t: any) => ({
+      label: t.qualified_name || t.name || t.id,
+      description: `${t.path} · ${t.depth} call${t.depth === 1 ? "" : "s"} deep`,
+      node: t,
+    }));
+    const picked = await vscode.window.showQuickPick<NodePickItem>(items, {
+      title: `${tests.length} test(s) exercise ${result.origin?.qualified_name || symbol}`,
+    });
+    if (picked) await openAtLine(root, picked.node.path, picked.node.start_line);
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`Graph-Code: ${err.message}`);
+  }
+}
+
+async function affectedTestsAtCursor() {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) return;
+  const range = editor.selection.isEmpty
+    ? editor.document.getWordRangeAtPosition(editor.selection.active)
+    : editor.selection;
+  if (!range) {
+    vscode.window.showWarningMessage("Graph-Code: place your cursor on a symbol first.");
+    return;
+  }
+  const symbol = editor.document.getText(range).trim();
+  if (symbol) await affectedTests(symbol);
+}
+
+async function affectedTestsPrompt() {
+  const symbol = await vscode.window.showInputBox({ prompt: "Symbol or file to find tests for" });
+  if (symbol) await affectedTests(symbol);
+}
+
 export function activate(context: vscode.ExtensionContext) {
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.text = "$(graph) graph-code: not indexed";
@@ -207,7 +256,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("graphcode.blastRadiusAtCursor", blastRadiusAtCursor),
     vscode.commands.registerCommand("graphcode.blastRadiusPrompt", blastRadiusPrompt),
     vscode.commands.registerCommand("graphcode.semanticSearch", semanticSearch),
-    vscode.commands.registerCommand("graphcode.shortestPath", shortestPath)
+    vscode.commands.registerCommand("graphcode.shortestPath", shortestPath),
+    vscode.commands.registerCommand("graphcode.affectedTestsAtCursor", affectedTestsAtCursor),
+    vscode.commands.registerCommand("graphcode.affectedTestsPrompt", affectedTestsPrompt)
   );
 }
 

@@ -64,6 +64,9 @@ def main() -> None:
     qc = qsub.add_parser("call-chain")
     qc.add_argument("symbol")
 
+    qt = qsub.add_parser("affected-tests")
+    qt.add_argument("symbol")
+
     qsrc = qsub.add_parser("source")
     qsrc.add_argument("path")
     qsrc.add_argument("--start", type=int, default=1)
@@ -111,6 +114,7 @@ def main() -> None:
         from graphcode.queries.call_chain import call_chain
         from graphcode.queries.hybrid import semantic_search
         from graphcode.queries.paths import blast_radius, shortest_path
+        from graphcode.queries.test_impact import find_affected_tests
 
         svc = get_index_service()
         root = (svc.last_index or {}).get("root")
@@ -122,6 +126,8 @@ def main() -> None:
             print(json.dumps(semantic_search(svc, args.text, k=args.k, org_id="local"), indent=2))
         elif args.qcmd == "call-chain":
             print(json.dumps(call_chain(svc.memory, args.symbol, org_id="local"), indent=2))
+        elif args.qcmd == "affected-tests":
+            print(json.dumps(find_affected_tests(svc.memory, args.symbol, org_id="local"), indent=2))
         elif args.qcmd == "source":
             if not root:
                 print(json.dumps({"error": "no repo indexed yet"}))

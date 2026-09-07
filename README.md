@@ -126,7 +126,10 @@ inside it.
 A GitHub Action that diffs a PR, finds which indexed functions/classes the diff
 actually touches, and comments the real callers/importers of each — using the
 structural graph, not text search, so it catches a caller that never mentions the
-changed symbol's name in its own diff.
+changed symbol's name in its own diff. It also answers the natural follow-up
+question: which tests actually exercise the changed code (traced through CALLS
+edges, transitively through helpers — not by filename convention), so the comment
+tells you what to run, not just what might break.
 
 **No deployment, ever.** It's a workflow file that runs entirely on GitHub's own CI
 infrastructure — not a server you or anyone else hosts. Two ways to add it, easiest
@@ -209,9 +212,11 @@ ext install adrijadhar.graph-code
 ```
 
 Once installed: open a folder, run **Graph-Code: Index Workspace** (also sits in the
-status bar), then right-click any symbol for **Blast Radius for Symbol at Cursor**, or
-reach for **Graph-Code: Semantic Search** / **Shortest Path** from the Command
-Palette. Every result is a jump-to-location QuickPick.
+status bar), then right-click any symbol for **Blast Radius for Symbol at Cursor** or
+**Affected Tests for Symbol at Cursor** — the latter tells you which tests actually
+exercise it, traced through the real call graph, not filename guessing — or reach for
+**Graph-Code: Semantic Search** / **Shortest Path** from the Command Palette. Every
+result is a jump-to-location QuickPick.
 
 ## 5. Hosted web app
 
@@ -247,7 +252,9 @@ Stripe is entirely optional and only relevant if you later want to charge for it
 
 ## MCP tools
 
-`graph_index_repo`, `graph_status`, `graph_shortest_path`, `graph_call_chain`, `graph_blast_radius`, `graph_compile_context`, `graph_get_context`, `graph_read_file`, `graph_semantic_search`, `graph_watch_start`.
+`graph_index_repo`, `graph_status`, `graph_shortest_path`, `graph_call_chain`, `graph_blast_radius`, `graph_affected_tests`, `graph_compile_context`, `graph_get_context`, `graph_read_file`, `graph_semantic_search`, `graph_watch_start`.
+
+`graph_affected_tests` answers the natural follow-up to blast radius: not just what breaks, but what to run to check. It traces CALLS edges backward from a symbol — transitively, through helpers — to any indexed test function that exercises it, rather than guessing from filenames. The PR bot uses this automatically (see below); it's also available directly via `graphcode query affected-tests <symbol>` or the VS Code extension's **Affected Tests for Symbol at Cursor** command.
 
 ## Benchmarks
 

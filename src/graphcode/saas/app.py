@@ -17,6 +17,7 @@ from graphcode.indexer import get_index_service
 from graphcode.queries.call_chain import call_chain
 from graphcode.queries.hybrid import semantic_search
 from graphcode.queries.paths import blast_radius, shortest_path
+from graphcode.queries.test_impact import find_affected_tests
 from graphcode.saas.admin import admin_overview, is_admin
 from graphcode.saas.auth import (
     create_api_key,
@@ -362,6 +363,18 @@ def q_chain(symbol: str, ctx=Depends(require_user)):
     t0 = time.time()
     out = call_chain(get_index_service().memory, symbol, org_id=str(org.id))
     record_usage(org.id, "query.chain", latency_ms=int((time.time() - t0) * 1000))
+    return out
+
+
+@app.get("/v1/queries/affected-tests")
+def q_affected_tests(symbol: str, ctx=Depends(require_user)):
+    _, org = ctx
+    ok, msg = check_quota(org.id, org.plan, "query")
+    if not ok:
+        raise HTTPException(429, msg)
+    t0 = time.time()
+    out = find_affected_tests(get_index_service().memory, symbol, org_id=str(org.id))
+    record_usage(org.id, "query.affected_tests", latency_ms=int((time.time() - t0) * 1000))
     return out
 
 

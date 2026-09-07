@@ -44,12 +44,25 @@
       {
         "command": "graphcode.shortestPath",
         "title": "Graph-Code: Shortest Path Between Two Symbols"
+      },
+      {
+        "command": "graphcode.affectedTestsAtCursor",
+        "title": "Graph-Code: Affected Tests for Symbol at Cursor"
+      },
+      {
+        "command": "graphcode.affectedTestsPrompt",
+        "title": "Graph-Code: Affected Tests for Symbol..."
       }
     ],
     "menus": {
       "editor/context": [
         {
           "command": "graphcode.blastRadiusAtCursor",
+          "group": "navigation",
+          "when": "editorHasSelection || editorTextFocus"
+        },
+        {
+          "command": "graphcode.affectedTestsAtCursor",
           "group": "navigation",
           "when": "editorHasSelection || editorTextFocus"
         }

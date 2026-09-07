@@ -87,3 +87,57 @@ def test_pr_bot_reports_no_dependents_when_symbol_is_unused(tmp_path):
 
 def test_build_comment_empty_when_nothing_changed():
     assert build_comment(None, []) == ""
+
+
+def test_pr_bot_reports_affected_tests(tmp_path):
+    """The actual value-add of test-impact analysis in the PR bot: a changed function
+    two calls deep from the test (through a helper) should still surface that test by
+    name, not just "something in tests/ changed" — this only works via real CALLS
+    traversal, not filename heuristics on the changed file itself."""
+    repo = _make_repo(tmp_path)
+    (repo / "core.py").write_text("def process(x):\n    return x * 2\n")
+    (repo / "support.py").write_text(
+        "from core import process\n\n\ndef helper(x):\n    return process(x) + 1\n"
+    )
+    (repo / "tests").mkdir()
+    (repo / "tests" / "__init__.py").write_text("")
+    (repo / "tests" / "test_support.py").write_text(
+        "from support import helper\n\n\ndef test_helper():\n    assert helper(1) == 3\n"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "branch", "base_ref")
+
+    (repo / "core.py").write_text("def process(x):\n    return x * 3  # changed\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "change process")
+
+    svc = IndexService(rocks_path=tmp_path / "rocks")
+    svc.index_repo(repo, parallel=False)
+
+    ranges = changed_line_ranges(repo, "base_ref", "HEAD")
+    changed = changed_symbols(svc, ranges)
+    comment = build_comment(svc, changed)
+    assert "test(s) exercise the changed code" in comment
+    assert "test_support.py" in comment
+    assert "test_helper" in comment
+
+
+def test_pr_bot_warns_when_no_tests_cover_the_change(tmp_path):
+    repo = _make_repo(tmp_path)
+    (repo / "solo.py").write_text("def unused():\n    return 1\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "branch", "base_ref")
+
+    (repo / "solo.py").write_text("def unused():\n    return 2  # changed\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "change")
+
+    svc = IndexService(rocks_path=tmp_path / "rocks")
+    svc.index_repo(repo, parallel=False)
+
+    ranges = changed_line_ranges(repo, "base_ref", "HEAD")
+    changed = changed_symbols(svc, ranges)
+    comment = build_comment(svc, changed)
+    assert "No indexed tests were found" in comment

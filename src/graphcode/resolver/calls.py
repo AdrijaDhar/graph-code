@@ -49,10 +49,23 @@ def resolve_calls(batch: GraphBatch) -> None:
                         dest = modules.get(mid)
                         if not dest:
                             continue
+                        # Go imports a whole *package* (a directory), but
+                        # resolve_imports links only one representative file per
+                        # import — deliberately, since linking every file in the
+                        # package inflated blast_radius/PPR edge density and measurably
+                        # hurt retrieval quality on a real repo (imports.py::
+                        # _go_import_paths has the numbers). Expand to every sibling
+                        # .go file here instead, where it only affects call-resolution
+                        # correctness, not the structural graph PPR/blast_radius see.
+                        if dest.props.get("language") == "go":
+                            dest_dir = dest.props.get("path", "").rsplit("/", 1)[0]
+                            search_paths = {
+                                p for p in by_path if p.endswith(".go") and p.rsplit("/", 1)[0] == dest_dir
+                            }
+                        else:
+                            search_paths = {dest.props.get("path")}
                         hits = [
-                            f
-                            for f in functions
-                            if f.props.get("path") == dest.props.get("path") and f.props["name"] == simple
+                            f for f in functions if f.props.get("path") in search_paths and f.props["name"] == simple
                         ]
                         if len(hits) == 1:
                             target = hits[0]

@@ -94,15 +94,40 @@ class MemoryStore:
         `_hydrate()` warm-loads every org's persisted snapshots into this same shared
         store, so an unscoped lookup can otherwise resolve a different tenant's symbol
         of the same name (a real cross-tenant leak in the multi-org SaaS app, since
-        this is the resolution `blast_radius`/`shortest_path`/`call_chain` all use)."""
+        this is the resolution `blast_radius`/`shortest_path`/`call_chain` all use).
+
+        Ranks every candidate by match specificity instead of returning the first
+        loose match hit during dict iteration — a real, previously-reported bug:
+        querying "feedback" could match a stray variable whose qualified_name merely
+        *contained* "feedback" (e.g. in scripts/export_feedback_csv.py) before the
+        loop ever reached the actually-intended function, purely because of insertion
+        order. Exact id/path/qualified_name match wins outright; then a dotted-suffix
+        match (searching "parse_config" should prefer ending in ".parse_config" over
+        any substring hit); then a path suffix; substring match is the last resort,
+        and among those, prefers non-Variable symbols and shorter (more specific)
+        qualified names as tiebreakers."""
         direct = self.nodes.get(key)
         if direct is not None and (org_id is None or direct.props.get("org_id") == org_id):
             return direct
+
+        best: tuple[int, int] | None = None
+        best_node: GraphNode | None = None
         for n in self.nodes.values():
             if org_id is not None and n.props.get("org_id") != org_id:
                 continue
-            if n.props.get("path") == key or n.props.get("qualified_name") == key:
-                return n
-            if key in n.props.get("qualified_name", "") or n.props.get("path", "").endswith(key):
-                return n
-        return None
+            qn = n.props.get("qualified_name", "")
+            path = n.props.get("path", "")
+            if qn == key or path == key:
+                score = 0
+            elif qn.endswith("." + key):
+                score = 1
+            elif path.endswith(key):
+                score = 2
+            elif key in qn or key in path:
+                score = 4 if n.label == "Variable" else 3
+            else:
+                continue
+            rank = (score, len(qn))
+            if best is None or rank < best:
+                best, best_node = rank, n
+        return best_node

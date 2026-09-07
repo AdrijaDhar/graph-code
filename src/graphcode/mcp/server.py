@@ -12,6 +12,7 @@ from graphcode.indexer import get_index_service
 from graphcode.queries.call_chain import call_chain
 from graphcode.queries.hybrid import semantic_search
 from graphcode.queries.paths import blast_radius, shortest_path
+from graphcode.queries.test_impact import find_affected_tests
 from graphcode.watcher.daemon import get_watch
 
 mcp = FastMCP("graph-code")
@@ -62,6 +63,15 @@ def graph_shortest_path(from_symbol: str, to_symbol: str, max_hops: int = 10) ->
 def graph_call_chain(symbol: str, max_depth: int = 5) -> str:
     """Downstream CALLS expansion from a function or file."""
     return json.dumps(call_chain(_svc().memory, symbol, max_depth=max_depth, org_id="local"), indent=2)
+
+
+@mcp.tool()
+def graph_affected_tests(symbol: str) -> str:
+    """Which tests actually exercise this symbol, found by tracing CALLS edges
+    backward (transitively, through helpers) rather than by file naming convention —
+    the natural next question after blast radius: not just what breaks, but what to
+    run to check."""
+    return json.dumps(find_affected_tests(_svc().memory, symbol, org_id="local"), indent=2)
 
 
 @mcp.tool()

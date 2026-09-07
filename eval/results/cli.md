@@ -6,11 +6,11 @@
 |---|---|---|
 | file | 0.000 | 0.000 |
 | semantic | 0.336 | 0.565 |
-| structural_bfs | 0.273 | 0.375 |
-| structural_ppr | 0.307 | 0.451 |
-| hybrid_rrf | 0.331 | 0.467 |
+| structural_bfs | 0.273 | 0.368 |
+| structural_ppr | 0.304 | 0.449 |
+| hybrid_rrf | 0.327 | 0.461 |
 
-**M3 acceptance check**: hybrid_rrf recall@10 (0.331) does NOT beat file (0.000) and semantic (0.336).
+**M3 acceptance check**: hybrid_rrf recall@10 (0.327) does NOT beat file (0.000) and semantic (0.336).
 
 ## M4 — gold-recall per token budget (n=20 sampled queries)
 
