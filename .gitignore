@@ -27,4 +27,3 @@ data/*
 .DS_Store
 apps/web/.next/
 apps/web/out/
-.claude
