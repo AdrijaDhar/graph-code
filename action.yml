@@ -1,8 +1,5 @@
 name: "Graph-Code Blast Radius"
-description: >
-  Comments what actually depends on the code a PR changes, found by traversing the
-  real call/import graph (Tree-sitter parsed) rather than text search — so it catches
-  a caller that never mentions the changed symbol's name in its own diff.
+description: "Comments a PR's real dependents and affected tests, traced via the call graph, not text search."
 author: "Adrija Dhar"
 branding:
   icon: "git-pull-request"
