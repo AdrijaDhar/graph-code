@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Badge,
@@ -93,6 +93,17 @@ export default function RepoPlaygroundClient() {
   const [askText, setAskText] = useState("");
   const [askBusy, setAskBusy] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
+
+  // Clicking a suggestion chip, a codebase-map node, or an Ask example updates a card
+  // further down the page — with no visual link between "I clicked something" and
+  // "something changed," that update is easy to miss entirely (confirmed live: "does
+  // nothing... graph moves a lil but nothing... comes"). Scrolling the relevant card
+  // into view on every one of those triggers makes the result impossible to miss.
+  const exploreRef = useRef<HTMLDivElement>(null);
+  const secondaryRef = useRef<HTMLDivElement>(null);
+  function scrollTo(ref: React.RefObject<HTMLDivElement>) {
+    setTimeout(() => ref.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
 
   useEffect(() => {
     // Reset all per-repo state on navigation to a different id — this component
@@ -207,6 +218,7 @@ export default function RepoPlaygroundClient() {
       const tests = await testsRes.json();
       setBlastResult(blast);
       setTestsResult(tests);
+      scrollTo(exploreRef);
       return { blast, tests };
     } finally {
       setExploreBusy(false);
@@ -296,26 +308,31 @@ export default function RepoPlaygroundClient() {
           if (sym) setSymbol(sym);
           setBlastResult(result.data.blast);
           setTestsResult(result.data.tests);
+          scrollTo(exploreRef);
           break;
         case "tests":
           if (sym) setSymbol(sym);
           setTestsResult(result.data);
+          scrollTo(exploreRef);
           break;
         case "path":
           setTab("path");
           if (result.symbols?.[0]) setFromSymbol(result.symbols[0]);
           if (result.symbols?.[1]) setToSymbol(result.symbols[1]);
           setPathResult(result.data);
+          scrollTo(secondaryRef);
           break;
         case "chain":
           setTab("chain");
           if (sym) setChainSymbol(sym);
           setChainResult(result.data);
+          scrollTo(secondaryRef);
           break;
         default:
           setTab("semantic");
           setQuery(text);
           setSemanticResult(result.data);
+          scrollTo(secondaryRef);
       }
     } catch (err: any) {
       setAnswer(`Error: ${err?.message || err}`);
@@ -392,19 +409,36 @@ export default function RepoPlaygroundClient() {
               Ask
             </Button>
           </form>
+          {/* These used to be literal template text ("what depends on this?", with
+              "this" never replaced by a real name) — clicking one just filled the box
+              with unanswerable text, so asking it correctly found nothing and fell
+              back to a semantic search, which looked exactly like "does nothing."
+              Built from this repo's own top suggested symbols instead, so every chip
+              is a real, immediately-answerable question — and clicking one now runs
+              it immediately (matching the suggestion chips below), not just fills
+              the box. */}
           <div className="flex flex-wrap gap-2 mb-3">
-            {[
-              "what depends on this?",
-              "what does this call?",
-              "what tests cover this?",
-              "how are X and Y connected?",
-              "find code that handles errors",
-            ].map((ex) => (
+            {(suggestions && suggestions.length > 0
+              ? [
+                  `what breaks if I change ${suggestions[0].qualified_name || suggestions[0].name}?`,
+                  `what tests cover ${suggestions[0].qualified_name || suggestions[0].name}?`,
+                  ...(suggestions[1]
+                    ? [
+                        `how are ${suggestions[0].qualified_name || suggestions[0].name} and ${
+                          suggestions[1].qualified_name || suggestions[1].name
+                        } connected?`,
+                      ]
+                    : []),
+                  "find code that handles errors",
+                ]
+              : ["find code that handles errors", "find code that parses configuration"]
+            ).map((ex) => (
               <button
                 key={ex}
                 type="button"
-                onClick={() => setAskText(ex)}
-                className="text-xs rounded-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 px-3 py-1.5 text-[#e8eefc]/55 transition-colors"
+                disabled={askBusy}
+                onClick={() => ask(ex)}
+                className="text-xs rounded-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 px-3 py-1.5 text-[#e8eefc]/55 transition-colors disabled:opacity-40"
               >
                 {ex}
               </button>
@@ -488,7 +522,12 @@ export default function RepoPlaygroundClient() {
       {/* THE primary action on this page — everything else here is either a way to
           pick a symbol for this (suggestions, the map) or a secondary, occasional
           tool (the tabs below). Blast radius and affected tests answer the same
-          real question, so they show together, not as separate tabs to hunt through. */}
+          real question, so they show together, not as separate tabs to hunt through.
+          Wrapped in a plain div (not the ref directly on Card, which doesn't forward
+          refs) so clicking a suggestion/map node/Ask example can scroll this exact
+          spot into view — otherwise the update happens off-screen with nothing
+          visibly connecting the click to it (confirmed live). */}
+      <div ref={exploreRef}>
       <Card className={isActive ? "" : "opacity-50 pointer-events-none"}>
         <SectionHeading icon={<NetworkIcon className="w-4 h-4" />}>Explore a symbol</SectionHeading>
         <Muted className="mb-3">
@@ -561,7 +600,9 @@ export default function RepoPlaygroundClient() {
           />
         )}
       </Card>
+      </div>
 
+      <div ref={secondaryRef}>
       <Card className={isActive ? "" : "opacity-50 pointer-events-none"}>
         <SectionHeading>More ways to explore</SectionHeading>
         <Muted className="mb-3 text-xs">
@@ -692,6 +733,7 @@ export default function RepoPlaygroundClient() {
           </div>
         )}
       </Card>
+      </div>
 
       {sourceView && (
         <Card>
