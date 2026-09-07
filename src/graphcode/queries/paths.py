@@ -59,6 +59,7 @@ def shortest_path(
 def blast_radius(
     store: MemoryStore, key: str, direction: str = "upstream", max_hops: int = 5, org_id: str | None = None
 ) -> dict:
+    # touched to trigger the PR bot demo
     origin = store.find(key, org_id=org_id)
     if not origin:
         return {"nodes": [], "error": "not found"}
