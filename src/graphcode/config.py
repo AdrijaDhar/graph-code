@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     session_secret: str = "graphcode-dev-secret-change-me"
     cors_origins: str = "http://localhost:3000"
     public_base_url: str = "http://localhost:8000"
+    # Where the OAuth login flow redirects back to after signing in — was hardcoded
+    # to localhost, which only ever worked by coincidence in local dev (the frontend
+    # genuinely was on :3000). Confirmed live: deploying to a real host sent every
+    # user's browser back to their own localhost instead of the real deployed site.
+    frontend_url: str = "http://localhost:3000"
     # Off by default: a fresh clone has no data/models/reranker.joblib (see
     # queries/learned_rerank.py::get_default_reranker) until eval/train_reranker.py is
     # run, and this is a research result with real, honestly-reported per-repo

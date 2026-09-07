@@ -197,7 +197,7 @@ def view_blast(symbol: str = "parse_config"):
 def auth_github():
     if not settings.github_client_id:
         user, org = upsert_github_user("0", "demo", "Demo User")
-        resp = RedirectResponse(url="http://localhost:3000/app")
+        resp = RedirectResponse(url=f"{settings.frontend_url}/app")
         resp.set_cookie("gc_session", sign_session(f"u:{user.id}"), httponly=True)
         return resp
     state = secrets.token_urlsafe(16)
@@ -210,7 +210,7 @@ def auth_callback(code: str = "", state: str = ""):
     if not info:
         raise HTTPException(400, "oauth failed")
     user, org = upsert_github_user(str(info.get("id")), info.get("login") or "user", info.get("name") or "")
-    resp = RedirectResponse(url="http://localhost:3000/app")
+    resp = RedirectResponse(url=f"{settings.frontend_url}/app")
     resp.set_cookie("gc_session", sign_session(f"u:{user.id}"), httponly=True)
     return resp
 
