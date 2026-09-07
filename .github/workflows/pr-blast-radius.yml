@@ -26,6 +26,16 @@ jobs:
       # Any other repo adopting this file needs graphcode installed as a dependency,
       # not assumed to be the current checkout.
       - run: pip install "graphcode @ git+https://github.com/AdrijaDhar/graph-code.git"
+      # Posts as the "graph-code" GitHub App (its own name + avatar) instead of the
+      # generic github-actions[bot] identity every default-token comment gets —
+      # otherwise indistinguishable from any other CI check in a PR's comment feed.
+      # Needs the App installed on this repo and its Client ID/private key as secrets
+      # (Settings -> Secrets and variables -> Actions): CLIENT_ID, APP_PRIVATE_KEY.
+      - uses: actions/create-github-app-token@v3
+        id: app_token
+        with:
+          client-id: ${{ secrets.CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
       - run: >
           graphcode pr-comment
           --repo .
@@ -33,6 +43,6 @@ jobs:
           --head HEAD
           --post
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app_token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

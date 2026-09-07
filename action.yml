@@ -13,6 +13,19 @@ inputs:
     description: "upstream (who depends on it) | downstream (what it depends on) | both"
     required: false
     default: "upstream"
+  app-client-id:
+    description: >
+      Optional: the Client ID of a GitHub App installed on this repo, so the comment
+      posts under that App's own name/avatar instead of the generic
+      github-actions[bot] identity. Needs app-private-key too. Omit both to just use
+      the default token (works with zero setup, looks like any other CI check's
+      comment).
+    required: false
+    default: ""
+  app-private-key:
+    description: "Private key for app-client-id, as a repo secret — required if app-client-id is set."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -25,6 +38,12 @@ runs:
     # someone else's repo, not graph-code itself.
     - run: pip install "graphcode @ git+https://github.com/AdrijaDhar/graph-code.git"
       shell: bash
+    - uses: actions/create-github-app-token@v3
+      id: app_token
+      if: inputs.app-client-id != ''
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        private-key: ${{ inputs.app-private-key }}
     - run: >
         graphcode pr-comment
         --repo "$GITHUB_WORKSPACE"
@@ -34,9 +53,11 @@ runs:
         --post
       shell: bash
       env:
-        # github.token is the same token GITHUB_TOKEN would resolve to, already scoped
-        # by the calling workflow's own `permissions:` block — nothing extra for the
-        # consumer to configure or pass in.
-        GITHUB_TOKEN: ${{ github.token }}
+        # Falls back to github.token (the default GITHUB_TOKEN, already scoped by the
+        # calling workflow's own `permissions:` block) when app-client-id isn't set —
+        # the app_token step above didn't run, so its output is empty and this just
+        # uses the default. Nothing extra for a consumer to configure unless they want
+        # the custom-identity upgrade.
+        GITHUB_TOKEN: ${{ steps.app_token.outputs.token || github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
