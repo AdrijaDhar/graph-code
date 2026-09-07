@@ -123,7 +123,13 @@ def test_delete_module_still_works_and_schedules_snapshot(tmp_path):
 
 def test_snapshot_writes_are_debounced_across_bursts(tmp_path):
     root = _fresh_repo(tmp_path)
-    svc = IndexService(rocks_path=tmp_path / "rocks", snapshot_debounce_s=0.3)
+    # 0.3s used to be tight enough that 5 real reindex_file calls (each real parsing +
+    # edge resolution, not mocked) could take longer than the debounce window on a
+    # slower/loaded CI runner, firing the timer mid-burst and failing the "still
+    # debounced" assertion below (confirmed live: this flaked on GitHub Actions'
+    # shared runners while passing reliably locally). 2.0s gives real headroom without
+    # meaningfully slowing the suite down.
+    svc = IndexService(rocks_path=tmp_path / "rocks", snapshot_debounce_s=2.0)
     svc.index_repo(root, parallel=False)
     svc.flush_snapshot()  # clear the one from index_repo's own initial state if pending
 
@@ -142,7 +148,7 @@ def test_snapshot_writes_are_debounced_across_bursts(tmp_path):
         svc.reindex_file(root, "src/utils.py")
 
     assert call_count["n"] == 0, "snapshot should not have fired yet, still debounced"
-    time.sleep(0.5)
+    time.sleep(2.5)
     assert call_count["n"] == 1, "exactly one coalesced snapshot write after the debounce window"
 
 
